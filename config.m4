@@ -89,6 +89,7 @@ if test "$PHP_GRPC" != "no"; then
     src/core/config/config_vars.cc \
     src/core/config/config_vars_non_generated.cc \
     src/core/config/core_configuration.cc \
+    src/core/config/experiment_env_var.cc \
     src/core/config/load_config.cc \
     src/core/credentials/call/call_creds_registry_init.cc \
     src/core/credentials/call/call_creds_util.cc \
@@ -136,6 +137,7 @@ if test "$PHP_GRPC" != "no"; then
     src/core/credentials/transport/tls/grpc_tls_certificate_distributor.cc \
     src/core/credentials/transport/tls/grpc_tls_certificate_match.cc \
     src/core/credentials/transport/tls/grpc_tls_certificate_provider.cc \
+    src/core/credentials/transport/tls/grpc_tls_certificate_selector.cc \
     src/core/credentials/transport/tls/grpc_tls_certificate_verifier.cc \
     src/core/credentials/transport/tls/grpc_tls_credentials_options.cc \
     src/core/credentials/transport/tls/grpc_tls_crl_provider.cc \
@@ -867,6 +869,7 @@ if test "$PHP_GRPC" != "no"; then
     src/core/tsi/ssl/session_cache/ssl_session_boringssl.cc \
     src/core/tsi/ssl/session_cache/ssl_session_cache.cc \
     src/core/tsi/ssl/session_cache/ssl_session_openssl.cc \
+    src/core/tsi/ssl_telemetry_utils.cc \
     src/core/tsi/ssl_transport_security.cc \
     src/core/tsi/ssl_transport_security_utils.cc \
     src/core/tsi/transport_security.cc \
@@ -1502,7 +1505,7 @@ if test "$PHP_GRPC" != "no"; then
     -D_HAS_EXCEPTIONS=0 -DNOMINMAX -DGRPC_ARES=0 \
     -DGRPC_POSIX_FORK_ALLOW_PTHREAD_ATFORK=1 \
     -DGRPC_XDS_USER_AGENT_NAME_SUFFIX='"\"PHP\""' \
-    -DGRPC_XDS_USER_AGENT_VERSION_SUFFIX='"\"1.82.1\""')
+    -DGRPC_XDS_USER_AGENT_VERSION_SUFFIX='"\"1.83.0RC1\""')
   PHP_ADD_BUILD_DIR($ext_builddir/src/core/call)
   PHP_ADD_BUILD_DIR($ext_builddir/src/core/channelz)
   PHP_ADD_BUILD_DIR($ext_builddir/src/core/channelz/v2tov1)
