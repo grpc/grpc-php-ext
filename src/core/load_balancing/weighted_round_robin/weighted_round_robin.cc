@@ -36,7 +36,6 @@
 
 #include "src/core/client_channel/client_channel_service_config.h"
 #include "src/core/config/core_configuration.h"
-#include "src/core/config/experiment_env_var.h"
 #include "src/core/lib/channel/channel_args.h"
 #include "src/core/lib/debug/trace.h"
 #include "src/core/lib/experiments/experiments.h"
@@ -56,6 +55,7 @@
 #include "src/core/telemetry/stats.h"
 #include "src/core/telemetry/stats_data.h"
 #include "src/core/util/debug_location.h"
+#include "src/core/util/env.h"
 #include "src/core/util/grpc_check.h"
 #include "src/core/util/json/json.h"
 #include "src/core/util/json/json_args.h"
@@ -64,6 +64,7 @@
 #include "src/core/util/ref_counted.h"
 #include "src/core/util/ref_counted_ptr.h"
 #include "src/core/util/shared_bit_gen.h"
+#include "src/core/util/string.h"
 #include "src/core/util/sync.h"
 #include "src/core/util/time.h"
 #include "src/core/util/validation_errors.h"
@@ -81,7 +82,11 @@
 namespace grpc_core {
 
 bool WrrCustomMetricsEnabled() {
-  return IsExperimentEnvVarEnabled("GRPC_EXPERIMENTAL_WRR_CUSTOM_METRICS");
+  auto value = GetEnv("GRPC_EXPERIMENTAL_WRR_CUSTOM_METRICS");
+  if (!value.has_value()) return false;
+  bool parsed_value;
+  bool parse_succeeded = gpr_parse_bool_value(value->c_str(), &parsed_value);
+  return parse_succeeded && parsed_value;
 }
 
 namespace {

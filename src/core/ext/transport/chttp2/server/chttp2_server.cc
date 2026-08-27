@@ -438,16 +438,11 @@ void NewChttp2ServerListener::ActiveConnection::SendGoAwayImplLocked() {
             transport->PerformOp(op);
           }
         },
-        [](const RefCountedPtr<http2::Http2ServerTransport>& transport) {
-          // Send a GOAWAY if the transport exists
-          if (transport != nullptr) {
-            grpc_transport_op* op = grpc_make_transport_op(nullptr);
-            // We send a non-ok status here to send the status message in the
-            // GOAWAY frame.
-            op->goaway_error =
-                absl::UnavailableError("Server is stopping to serve requests.");
-            transport->PerformOp(op);
-          }
+        [](GRPC_UNUSED const RefCountedPtr<http2::Http2ServerTransport>&
+               transport) {
+          // TODO(akshitpatel) [PH2][P0] : Add support for GOAWAY for
+          // Http2ServerTransport.
+          LOG(FATAL) << "Not implemented";
         });
   }
 }
@@ -473,14 +468,11 @@ void NewChttp2ServerListener::ActiveConnection::
           transport->PerformOp(op);
         }
       },
-      [](const RefCountedPtr<http2::Http2ServerTransport>& transport) {
-        // Disconnect immediately if the transport exists
-        if (transport != nullptr) {
-          grpc_transport_op* op = grpc_make_transport_op(nullptr);
-          op->disconnect_with_error = absl::UnavailableError(
-              "Drain grace time expired. Closing connection immediately.");
-          transport->PerformOp(op);
-        }
+      [](GRPC_UNUSED const RefCountedPtr<http2::Http2ServerTransport>&
+             transport) {
+        // TODO(akshitpatel) [PH2][P0] : Add support for disconnect immediately
+        // for Http2ServerTransport.
+        LOG(FATAL) << "Not implemented";
       });
 }
 
@@ -744,7 +736,9 @@ absl::StatusOr<int> Chttp2ServerAddPort(Server* server, const char* addr,
       resolved = grpc_resolve_vsock_address(parsed_addr_unprefixed);
       GRPC_RETURN_IF_ERROR(resolved.status());
     } else {
-      if (IsEventEngineDnsNonClientChannelEnabled()) {
+      if (IsEventEngineDnsNonClientChannelEnabled() &&
+          !grpc_event_engine::experimental::
+              EventEngineExperimentDisabledForPython()) {
         absl::StatusOr<std::unique_ptr<EventEngine::DNSResolver>> ee_resolver =
             args.GetObjectRef<EventEngine>()->GetDNSResolver(
                 EventEngine::DNSResolver::ResolverOptions());

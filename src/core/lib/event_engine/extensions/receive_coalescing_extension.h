@@ -37,6 +37,10 @@ class ReceiveCoalescingExtension {
   /// It is safe to call this only when there are no outstanding Reads on
   /// the Endpoint.
   virtual void DisableRpcReceiveCoalescing() = 0;
+
+  /// If invoked, the endpoint tries to preserve proper order and alignment of
+  /// any memory that maybe shared across reads.
+  virtual void EnforceRxMemoryAlignment() = 0;
 };
 
 }  // namespace grpc_event_engine::experimental

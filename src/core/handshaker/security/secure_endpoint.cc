@@ -883,6 +883,10 @@ class SecureEndpoint final : public EventEngine::Endpoint,
     impl_->DisableRpcReceiveCoalescing();
   }
 
+  void EnforceRxMemoryAlignment() override {
+    impl_->EnforceRxMemoryAlignment();
+  }
+
   std::shared_ptr<TelemetryInfo> GetTelemetryInfo() const override {
     return std::make_shared<Impl::TelemetryInfo>(impl_->GetTelemetryInfo());
   }
@@ -1101,6 +1105,15 @@ class SecureEndpoint final : public EventEngine::Endpoint,
       {
         grpc_core::MutexLock lock(&read_settings_mu_);
         rpc_receive_coalescing_enabled_ = false;
+      }
+    }
+
+    void EnforceRxMemoryAlignment() {
+      auto* ext = grpc_event_engine::experimental::QueryExtension<
+          grpc_event_engine::experimental::ReceiveCoalescingExtension>(
+          wrapped_ep_.get());
+      if (ext != nullptr) {
+        ext->EnforceRxMemoryAlignment();
       }
     }
 
