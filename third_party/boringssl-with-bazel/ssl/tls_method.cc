@@ -29,7 +29,7 @@ static void tls_on_handshake_complete(SSL *ssl) {
   // The handshake should have released its final message.
   assert(!ssl->s3->has_message);
 
-  // During the handshake, |hs_buf| is retained. Release if it there is no
+  // During the handshake, `hs_buf` is retained. Release if it there is no
   // excess in it. There should not be any excess because the handshake logic
   // rejects unprocessed data after each Finished message. Note this means we do
   // not allow a TLS 1.2 HelloRequest to be packed into the same record as
@@ -58,7 +58,7 @@ static bool tls_set_read_state(SSL *ssl, ssl_encryption_level_t level,
       return false;
     }
 
-    // QUIC only uses |ssl| for handshake messages, which never use early data
+    // QUIC only uses `ssl` for handshake messages, which never use early data
     // keys, so we return without installing anything. This avoids needing to
     // have two secrets active at once in 0-RTT.
     if (level == ssl_encryption_early_data) {
@@ -87,7 +87,7 @@ static bool tls_set_write_state(SSL *ssl, ssl_encryption_level_t level,
       return false;
     }
 
-    // QUIC only uses |ssl| for handshake messages, which never use early data
+    // QUIC only uses `ssl` for handshake messages, which never use early data
     // keys, so we return without installing anything. This avoids needing to
     // have two secrets active at once in 0-RTT.
     if (level == ssl_encryption_early_data) {
@@ -103,7 +103,7 @@ static bool tls_set_write_state(SSL *ssl, ssl_encryption_level_t level,
 
 static void tls_finish_flight(SSL *ssl) {
   // We don't track whether a flight is complete in TLS and instead always flush
-  // every queued message in |tls_flush|, whether the flight is complete or not.
+  // every queued message in `tls_flush`, whether the flight is complete or not.
 }
 
 static void tls_schedule_ack(SSL *ssl) {
@@ -165,9 +165,9 @@ static void ssl_noop_x509_ssl_flush_cached_client_CA(SSL_CONFIG *cfg) {}
 static bool ssl_noop_x509_ssl_auto_chain_if_needed(SSL_HANDSHAKE *hs) {
   return true;
 }
-static bool ssl_noop_x509_ssl_ctx_new(SSL_CTX *ctx) { return true; }
-static void ssl_noop_x509_ssl_ctx_free(SSL_CTX *ctx) {}
-static void ssl_noop_x509_ssl_ctx_flush_cached_client_CA(SSL_CTX *ctx) {}
+static bool ssl_noop_x509_ssl_ctx_new(SSLContext *ctx) { return true; }
+static void ssl_noop_x509_ssl_ctx_free(SSLContext *ctx) {}
+static void ssl_noop_x509_ssl_ctx_flush_cached_client_CA(SSLContext *ctx) {}
 
 const SSL_X509_METHOD ssl_noop_x509_method = {
     ssl_noop_x509_check_client_CA_names,
@@ -194,7 +194,7 @@ BSSL_NAMESPACE_END
 
 using namespace bssl;
 
-const SSL_METHOD *TLS_method(void) {
+const SSL_METHOD *TLS_method() {
   static const SSL_METHOD kMethod = {
       0,
       &kTLSProtocolMethod,
@@ -203,9 +203,9 @@ const SSL_METHOD *TLS_method(void) {
   return &kMethod;
 }
 
-const SSL_METHOD *SSLv23_method(void) { return TLS_method(); }
+const SSL_METHOD *SSLv23_method() { return TLS_method(); }
 
-const SSL_METHOD *TLS_with_buffers_method(void) {
+const SSL_METHOD *TLS_with_buffers_method() {
   static const SSL_METHOD kMethod = {
       0,
       &kTLSProtocolMethod,
@@ -216,7 +216,7 @@ const SSL_METHOD *TLS_with_buffers_method(void) {
 
 // Legacy version-locked methods.
 
-const SSL_METHOD *TLSv1_2_method(void) {
+const SSL_METHOD *TLSv1_2_method() {
   static const SSL_METHOD kMethod = {
       TLS1_2_VERSION,
       &kTLSProtocolMethod,
@@ -225,7 +225,7 @@ const SSL_METHOD *TLSv1_2_method(void) {
   return &kMethod;
 }
 
-const SSL_METHOD *TLSv1_1_method(void) {
+const SSL_METHOD *TLSv1_1_method() {
   static const SSL_METHOD kMethod = {
       TLS1_1_VERSION,
       &kTLSProtocolMethod,
@@ -234,7 +234,7 @@ const SSL_METHOD *TLSv1_1_method(void) {
   return &kMethod;
 }
 
-const SSL_METHOD *TLSv1_method(void) {
+const SSL_METHOD *TLSv1_method() {
   static const SSL_METHOD kMethod = {
       TLS1_VERSION,
       &kTLSProtocolMethod,
@@ -245,22 +245,22 @@ const SSL_METHOD *TLSv1_method(void) {
 
 // Legacy side-specific methods.
 
-const SSL_METHOD *TLSv1_2_server_method(void) { return TLSv1_2_method(); }
+const SSL_METHOD *TLSv1_2_server_method() { return TLSv1_2_method(); }
 
-const SSL_METHOD *TLSv1_1_server_method(void) { return TLSv1_1_method(); }
+const SSL_METHOD *TLSv1_1_server_method() { return TLSv1_1_method(); }
 
-const SSL_METHOD *TLSv1_server_method(void) { return TLSv1_method(); }
+const SSL_METHOD *TLSv1_server_method() { return TLSv1_method(); }
 
-const SSL_METHOD *TLSv1_2_client_method(void) { return TLSv1_2_method(); }
+const SSL_METHOD *TLSv1_2_client_method() { return TLSv1_2_method(); }
 
-const SSL_METHOD *TLSv1_1_client_method(void) { return TLSv1_1_method(); }
+const SSL_METHOD *TLSv1_1_client_method() { return TLSv1_1_method(); }
 
-const SSL_METHOD *TLSv1_client_method(void) { return TLSv1_method(); }
+const SSL_METHOD *TLSv1_client_method() { return TLSv1_method(); }
 
-const SSL_METHOD *SSLv23_server_method(void) { return SSLv23_method(); }
+const SSL_METHOD *SSLv23_server_method() { return SSLv23_method(); }
 
-const SSL_METHOD *SSLv23_client_method(void) { return SSLv23_method(); }
+const SSL_METHOD *SSLv23_client_method() { return SSLv23_method(); }
 
-const SSL_METHOD *TLS_server_method(void) { return TLS_method(); }
+const SSL_METHOD *TLS_server_method() { return TLS_method(); }
 
-const SSL_METHOD *TLS_client_method(void) { return TLS_method(); }
+const SSL_METHOD *TLS_client_method() { return TLS_method(); }
