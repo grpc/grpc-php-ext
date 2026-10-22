@@ -19,8 +19,6 @@
 #include "../../internal.h"
 
 
-using namespace bssl;
-
 static_assert(16 % sizeof(crypto_word_t) == 0,
               "block cannot be divided into crypto_word_t");
 
@@ -36,10 +34,10 @@ static void ctr96_inc(uint8_t *counter) {
   } while (n);
 }
 
-void bssl::CRYPTO_ctr128_encrypt_ctr32(const uint8_t *in, uint8_t *out,
-                                       size_t len, const AES_KEY *key,
-                                       uint8_t ivec[16], uint8_t ecount_buf[16],
-                                       unsigned int *num, ctr128_f func) {
+void CRYPTO_ctr128_encrypt_ctr32(const uint8_t *in, uint8_t *out, size_t len,
+                                 const AES_KEY *key, uint8_t ivec[16],
+                                 uint8_t ecount_buf[16], unsigned int *num,
+                                 ctr128_f func) {
   unsigned int n, ctr32;
 
   assert(key && ecount_buf && num);
@@ -75,7 +73,7 @@ void bssl::CRYPTO_ctr128_encrypt_ctr32(const uint8_t *in, uint8_t *out,
     (*func)(in, out, blocks, key, ivec);
     // (*func) does not update ivec, caller does:
     CRYPTO_store_u32_be(ivec + 12, ctr32);
-    // ... overflow was detected, propagate carry.
+    // ... overflow was detected, propogate carry.
     if (ctr32 == 0) {
       ctr96_inc(ivec);
     }

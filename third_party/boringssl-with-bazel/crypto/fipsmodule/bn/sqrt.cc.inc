@@ -19,8 +19,6 @@
 #include "internal.h"
 
 
-using namespace bssl;
-
 BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx) {
   // Compute a square root of |a| mod |p| using the Tonelli/Shanks algorithm
   // (cf. Henri Cohen, "A Course in Algebraic Computational Number Theory",
@@ -34,50 +32,52 @@ BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx) {
 
   if (!BN_is_odd(p) || BN_abs_is_word(p, 1)) {
     if (BN_abs_is_word(p, 2)) {
-      if (ret == nullptr) {
+      if (ret == NULL) {
         ret = BN_new();
       }
-      if (ret == nullptr || !BN_set_word(ret, BN_is_bit_set(a, 0))) {
+      if (ret == NULL ||
+          !BN_set_word(ret, BN_is_bit_set(a, 0))) {
         if (ret != in) {
           BN_free(ret);
         }
-        return nullptr;
+        return NULL;
       }
       return ret;
     }
 
     OPENSSL_PUT_ERROR(BN, BN_R_P_IS_NOT_PRIME);
-    return nullptr;
+    return NULL;
   }
 
   if (BN_is_zero(a) || BN_is_one(a)) {
-    if (ret == nullptr) {
+    if (ret == NULL) {
       ret = BN_new();
     }
-    if (ret == nullptr || !BN_set_word(ret, BN_is_one(a))) {
+    if (ret == NULL ||
+        !BN_set_word(ret, BN_is_one(a))) {
       if (ret != in) {
         BN_free(ret);
       }
-      return nullptr;
+      return NULL;
     }
     return ret;
   }
 
-  BN_CTXScope scope(ctx);
+  BN_CTX_start(ctx);
   A = BN_CTX_get(ctx);
   b = BN_CTX_get(ctx);
   q = BN_CTX_get(ctx);
   t = BN_CTX_get(ctx);
   x = BN_CTX_get(ctx);
   y = BN_CTX_get(ctx);
-  if (y == nullptr) {
+  if (y == NULL) {
     goto end;
   }
 
-  if (ret == nullptr) {
+  if (ret == NULL) {
     ret = BN_new();
   }
-  if (ret == nullptr) {
+  if (ret == NULL) {
     goto end;
   }
 
@@ -104,7 +104,8 @@ BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx) {
       goto end;
     }
     q->neg = 0;
-    if (!BN_add_word(q, 1) || !BN_mod_exp_mont(ret, A, q, p, ctx, nullptr)) {
+    if (!BN_add_word(q, 1) ||
+        !BN_mod_exp_mont(ret, A, q, p, ctx, NULL)) {
       goto end;
     }
     err = 0;
@@ -148,7 +149,7 @@ BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx) {
       goto end;
     }
     q->neg = 0;
-    if (!BN_mod_exp_mont(b, t, q, p, ctx, nullptr)) {
+    if (!BN_mod_exp_mont(b, t, q, p, ctx, NULL)) {
       goto end;
     }
 
@@ -191,8 +192,19 @@ BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx) {
         goto end;
       }
     } else {
-      if (!BN_rand_range_ex(y, 22, p)) {
+      if (!BN_pseudo_rand(y, BN_num_bits(p), 0, 0)) {
         goto end;
+      }
+      if (BN_ucmp(y, p) >= 0) {
+        if (BN_usub(y, y, p)) {
+          goto end;
+        }
+      }
+      // now 0 <= y < |p|
+      if (BN_is_zero(y)) {
+        if (!BN_set_word(y, i)) {
+          goto end;
+        }
       }
     }
 
@@ -223,7 +235,7 @@ BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx) {
 
   // Now that we have some non-square, we can find an element
   // of order  2^e  by computing its q'th power.
-  if (!BN_mod_exp_mont(y, y, q, p, ctx, nullptr)) {
+  if (!BN_mod_exp_mont(y, y, q, p, ctx, NULL)) {
     goto end;
   }
   if (BN_is_one(y)) {
@@ -267,7 +279,7 @@ BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx) {
       goto end;
     }
   } else {
-    if (!BN_mod_exp_mont(x, A, t, p, ctx, nullptr)) {
+    if (!BN_mod_exp_mont(x, A, t, p, ctx, NULL)) {
       goto end;
     }
     if (BN_is_zero(x)) {
@@ -364,7 +376,84 @@ end:
     if (ret != in) {
       BN_clear_free(ret);
     }
-    ret = nullptr;
+    ret = NULL;
   }
+  BN_CTX_end(ctx);
   return ret;
+}
+
+int BN_sqrt(BIGNUM *out_sqrt, const BIGNUM *in, BN_CTX *ctx) {
+  BIGNUM *estimate, *tmp, *delta, *last_delta, *tmp2;
+  int ok = 0, last_delta_valid = 0;
+
+  if (in->neg) {
+    OPENSSL_PUT_ERROR(BN, BN_R_NEGATIVE_NUMBER);
+    return 0;
+  }
+  if (BN_is_zero(in)) {
+    BN_zero(out_sqrt);
+    return 1;
+  }
+
+  BN_CTX_start(ctx);
+  if (out_sqrt == in) {
+    estimate = BN_CTX_get(ctx);
+  } else {
+    estimate = out_sqrt;
+  }
+  tmp = BN_CTX_get(ctx);
+  last_delta = BN_CTX_get(ctx);
+  delta = BN_CTX_get(ctx);
+  if (estimate == NULL || tmp == NULL || last_delta == NULL || delta == NULL) {
+    goto err;
+  }
+
+  // We estimate that the square root of an n-bit number is 2^{n/2}.
+  if (!BN_lshift(estimate, BN_value_one(), BN_num_bits(in)/2)) {
+    goto err;
+  }
+
+  // This is Newton's method for finding a root of the equation |estimate|^2 -
+  // |in| = 0.
+  for (;;) {
+    // |estimate| = 1/2 * (|estimate| + |in|/|estimate|)
+    if (!BN_div(tmp, NULL, in, estimate, ctx) ||
+        !BN_add(tmp, tmp, estimate) ||
+        !BN_rshift1(estimate, tmp) ||
+        // |tmp| = |estimate|^2
+        !BN_sqr(tmp, estimate, ctx) ||
+        // |delta| = |in| - |tmp|
+        !BN_sub(delta, in, tmp)) {
+      OPENSSL_PUT_ERROR(BN, ERR_R_BN_LIB);
+      goto err;
+    }
+
+    delta->neg = 0;
+    // The difference between |in| and |estimate| squared is required to always
+    // decrease. This ensures that the loop always terminates, but I don't have
+    // a proof that it always finds the square root for a given square.
+    if (last_delta_valid && BN_cmp(delta, last_delta) >= 0) {
+      break;
+    }
+
+    last_delta_valid = 1;
+
+    tmp2 = last_delta;
+    last_delta = delta;
+    delta = tmp2;
+  }
+
+  if (BN_cmp(tmp, in) != 0) {
+    OPENSSL_PUT_ERROR(BN, BN_R_NOT_A_SQUARE);
+    goto err;
+  }
+
+  ok = 1;
+
+err:
+  if (ok && out_sqrt == in && !BN_copy(out_sqrt, estimate)) {
+    ok = 0;
+  }
+  BN_CTX_end(ctx);
+  return ok;
 }
