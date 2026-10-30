@@ -24,9 +24,6 @@
 #include "../bytestring/internal.h"
 #include "internal.h"
 
-
-using namespace bssl;
-
 // These functions take a string in UTF8, ASCII or multibyte form and a mask
 // of permissible ASN1 string types. It then works out the minimal type
 // (using the order Printable < IA5 < T61 < BMP < Universal < UTF8) and
@@ -82,7 +79,7 @@ int ASN1_mbstring_ncopy(ASN1_STRING **out, const unsigned char *in,
       return -1;
   }
 
-  // Check `minsize` and `maxsize` and work out the minimal type, if any.
+  // Check |minsize| and |maxsize| and work out the minimal type, if any.
   CBS cbs;
   CBS_init(&cbs, in, len);
   size_t utf8_len = 0, nchar = 0;
@@ -187,7 +184,7 @@ int ASN1_mbstring_ncopy(ASN1_STRING **out, const unsigned char *in,
   CBB cbb;
   CBB_zero(&cbb);
   // If both the same type just copy across
-  uint8_t *data = nullptr;
+  uint8_t *data = NULL;
   size_t data_len = 0;
   if (inform == outform) {
     if (!ASN1_STRING_set(dest, in, len)) {
@@ -209,7 +206,7 @@ int ASN1_mbstring_ncopy(ASN1_STRING **out, const unsigned char *in,
     }
   }
   if (/* OpenSSL historically NUL-terminated this value with a single byte,
-       * even for `MBSTRING_BMP` and `MBSTRING_UNIV`. */
+       * even for |MBSTRING_BMP| and |MBSTRING_UNIV|. */
       !CBB_add_u8(&cbb, 0) ||                 //
       !CBB_finish(&cbb, &data, &data_len) ||  //
       data_len < 1 ||                         //
@@ -231,7 +228,7 @@ err:
   return -1;
 }
 
-int bssl::asn1_is_printable(uint32_t value) {
+int asn1_is_printable(uint32_t value) {
   if (value > 0x7f) {
     return 0;
   }

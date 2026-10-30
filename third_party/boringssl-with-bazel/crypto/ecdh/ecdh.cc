@@ -26,19 +26,17 @@
 #include "../internal.h"
 
 
-using namespace bssl;
-
 int ECDH_compute_key(void *out, size_t out_len, const EC_POINT *pub_key,
                      const EC_KEY *priv_key,
                      void *(*kdf)(const void *in, size_t inlen, void *out,
                                   size_t *out_len)) {
-  if (FromOpaque(priv_key)->priv_key == nullptr) {
+  if (priv_key->priv_key == NULL) {
     OPENSSL_PUT_ERROR(ECDH, ECDH_R_NO_PRIVATE_VALUE);
     return -1;
   }
-  const EC_SCALAR *const priv = &FromOpaque(priv_key)->priv_key->scalar;
+  const EC_SCALAR *const priv = &priv_key->priv_key->scalar;
   const EC_GROUP *const group = EC_KEY_get0_group(priv_key);
-  if (EC_GROUP_cmp(group, pub_key->group, nullptr) != 0) {
+  if (EC_GROUP_cmp(group, pub_key->group, NULL) != 0) {
     OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return -1;
   }
@@ -53,8 +51,8 @@ int ECDH_compute_key(void *out, size_t out_len, const EC_POINT *pub_key,
     return -1;
   }
 
-  if (kdf != nullptr) {
-    if (kdf(buf, buf_len, out, &out_len) == nullptr) {
+  if (kdf != NULL) {
+    if (kdf(buf, buf_len, out, &out_len) == NULL) {
       OPENSSL_PUT_ERROR(ECDH, ECDH_R_KDF_FAILED);
       return -1;
     }

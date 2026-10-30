@@ -41,9 +41,7 @@ struct GrpcLbServer {
   int32_t ip_size;
   char ip_addr[GRPC_GRPCLB_SERVER_IP_ADDRESS_MAX_SIZE];
   int32_t port;
-  // One extra byte for the trailing NUL: load_balance_token is read as a C
-  // string by the drop path (gpr_strdup/strcmp) and AsText().
-  char load_balance_token[GRPC_GRPCLB_SERVER_LOAD_BALANCE_TOKEN_MAX_SIZE + 1];
+  char load_balance_token[GRPC_GRPCLB_SERVER_LOAD_BALANCE_TOKEN_MAX_SIZE];
   bool drop;
 
   bool operator==(const GrpcLbServer& other) const;

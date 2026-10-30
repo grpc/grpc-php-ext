@@ -17,10 +17,8 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "absl/base/attributes.h"
 #include "absl/base/config.h"
@@ -29,9 +27,6 @@
 #include "absl/strings/cord.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
-#include "absl/types/optional_ref.h"
-#include "absl/types/source_location.h"
-#include "absl/types/span.h"
 
 #ifndef SWIG
 // Disabled for SWIG as it doesn't parse attributes correctly.
@@ -43,13 +38,10 @@ ABSL_NAMESPACE_BEGIN
 // TODO(b/176172494): ABSL_MUST_USE_RESULT should expand to the more strict
 // [[nodiscard]]. For now, just use [[nodiscard]] directly when it is available.
 #if ABSL_HAVE_CPP_ATTRIBUTE(nodiscard)
-class [[nodiscard]] ABSL_ATTRIBUTE_TRIVIAL_ABI
-    Status;
+class [[nodiscard]] ABSL_ATTRIBUTE_TRIVIAL_ABI Status;
 #else
-class ABSL_MUST_USE_RESULT ABSL_ATTRIBUTE_TRIVIAL_ABI
-    Status;
+class ABSL_MUST_USE_RESULT ABSL_ATTRIBUTE_TRIVIAL_ABI Status;
 #endif
-
 ABSL_NAMESPACE_END
 }  // namespace absl
 #endif  // !SWIG
@@ -61,10 +53,6 @@ enum class StatusCode : int;
 enum class StatusToStringMode : int;
 
 namespace status_internal {
-#ifndef SWIG
-class StatusPrivateAccessor;
-class StatusPrivateAccessorForStatusBuilder;
-#endif  // !SWIG
 
 // Container for status payloads.
 struct Payload {
@@ -93,7 +81,7 @@ class StatusRep {
   void Unref() const;
 
   // Payload methods correspond to the same methods in absl::Status.
-  std::optional<absl::Cord> GetPayload(absl::string_view type_url) const;
+  absl::optional<absl::Cord> GetPayload(absl::string_view type_url) const;
   void SetPayload(absl::string_view type_url, absl::Cord payload);
   struct EraseResult {
     bool erased;
@@ -104,9 +92,6 @@ class StatusRep {
       absl::FunctionRef<void(absl::string_view, const absl::Cord&)> visitor)
       const;
 
-  absl::Span<const SourceLocation> GetSourceLocations() const;
-  void AddSourceLocation(absl::SourceLocation loc);
-
   std::string ToString(StatusToStringMode mode) const;
 
   bool operator==(const StatusRep& other) const;
@@ -114,17 +99,7 @@ class StatusRep {
 
   // Returns an equivalent heap allocated StatusRep with refcount 1.
   //
-  // If `new_message` is provided, the message will be replaced with the new
-  // message.
-  StatusRep* absl_nonnull Clone(
-      absl::optional_ref<absl::string_view> new_message, bool include_payloads,
-      bool include_source_locations) const;
-
-  // Same as Clone(), but also removes a reference to `this`. `this` is not safe
-  // to be used after calling as it may have been deleted.
-  StatusRep* absl_nonnull CloneAndUnref(
-      absl::optional_ref<absl::string_view> new_message, bool include_payloads,
-      bool include_source_locations) const;
+  // `this` is not safe to be used after calling as it may have been deleted.
   StatusRep* absl_nonnull CloneAndUnref() const;
 
  private:
@@ -135,7 +110,6 @@ class StatusRep {
   // is non-empty, then the resulting string_view is null terminated.
   // This is required to implement 'StatusMessageAsCStr(...)'
   std::string message_;
-  absl::InlinedVector<absl::SourceLocation, 1> source_locations_;
   std::unique_ptr<status_internal::Payloads> payloads_;
 };
 
