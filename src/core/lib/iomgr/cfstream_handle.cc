@@ -75,7 +75,9 @@ void CFStreamHandle::ReadCallback(CFReadStreamRef stream,
       break;
     case kCFStreamEventErrorOccurred:
       stream_error = CFReadStreamCopyError(stream);
-      error = GRPC_ERROR_CREATE_FROM_CFERROR(stream_error, "read error");
+      error = grpc_error_set_int(
+          GRPC_ERROR_CREATE_FROM_CFERROR(stream_error, "read error"),
+          grpc_core::StatusIntProperty::kRpcStatus, GRPC_STATUS_UNAVAILABLE);
       CFRelease(stream_error);
       handle->open_event_.SetShutdown(error);
       handle->write_event_.SetShutdown(error);
@@ -105,7 +107,9 @@ void CFStreamHandle::WriteCallback(CFWriteStreamRef stream,
       break;
     case kCFStreamEventErrorOccurred:
       stream_error = CFWriteStreamCopyError(stream);
-      error = GRPC_ERROR_CREATE_FROM_CFERROR(stream_error, "write error");
+      error = grpc_error_set_int(
+          GRPC_ERROR_CREATE_FROM_CFERROR(stream_error, "write error"),
+          grpc_core::StatusIntProperty::kRpcStatus, GRPC_STATUS_UNAVAILABLE);
       CFRelease(stream_error);
       handle->open_event_.SetShutdown(error);
       handle->write_event_.SetShutdown(error);

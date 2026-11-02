@@ -50,7 +50,6 @@
 #include "src/core/xds/grpc/xds_common_types.h"
 #include "src/core/xds/grpc/xds_common_types_parser.h"
 #include "src/core/xds/grpc/xds_route_config_parser.h"
-#include "src/core/xds/grpc/xds_tls_context_parser.h"
 #include "src/core/xds/xds_client/xds_resource_type.h"
 #include "upb/text/encode.h"
 #include "absl/log/log.h"
@@ -289,14 +288,14 @@ XdsListenerResource::HttpConnectionManager HttpConnectionManagerParse(
                 http_filter);
         auto extension = ExtractXdsExtension(context, typed_config, errors);
         if (!extension.has_value()) continue;
-        const XdsHttpFilterFactory* factory =
+        const XdsHttpFilterImpl* filter_impl =
             http_filter_registry.GetFilterForTopLevelType(extension->type);
-        if (factory == nullptr) {
+        if (filter_impl == nullptr) {
           if (!is_optional) errors->AddError("unsupported filter type");
           continue;
         }
-        if ((is_client && !factory->IsSupportedOnClients()) ||
-            (!is_client && !factory->IsSupportedOnServers())) {
+        if ((is_client && !filter_impl->IsSupportedOnClients()) ||
+            (!is_client && !filter_impl->IsSupportedOnServers())) {
           if (!is_optional) {
             errors->AddError(absl::StrCat("filter is not supported on ",
                                           is_client ? "clients" : "servers"));
@@ -306,19 +305,16 @@ XdsListenerResource::HttpConnectionManager HttpConnectionManagerParse(
         http_connection_manager.http_filters.emplace_back();
         auto& entry = http_connection_manager.http_filters.back();
         entry.name = std::string(name);
-        entry.config_proto_type = factory->ConfigProtoName();
-        entry.disabled =
-            envoy_extensions_filters_network_http_connection_manager_v3_HttpFilter_disabled(
-                http_filter);
+        entry.config_proto_type = filter_impl->ConfigProtoName();
         if (!is_client) {
-          std::optional<Json> filter_config =
-              factory->GenerateFilterConfig(name, context, *extension, errors);
+          std::optional<Json> filter_config = filter_impl->GenerateFilterConfig(
+              name, context, *extension, errors);
           if (filter_config.has_value()) {
             entry.config = std::move(*filter_config);
           }
         }
         entry.filter_config =
-            factory->ParseTopLevelConfig(name, context, *extension, errors);
+            filter_impl->ParseTopLevelConfig(name, context, *extension, errors);
       }
     }
     if (errors->size() == original_error_size &&
@@ -330,19 +326,19 @@ XdsListenerResource::HttpConnectionManager HttpConnectionManagerParse(
     // to take care of the case where there are two terminal filters in the list
     // out of which only one gets added in the final list.
     for (const auto& http_filter : http_connection_manager.http_filters) {
-      const XdsHttpFilterFactory* factory =
+      const XdsHttpFilterImpl* filter_impl =
           http_filter_registry.GetFilterForTopLevelType(
               http_filter.config_proto_type);
       if (&http_filter != &http_connection_manager.http_filters.back()) {
         // Filters before the last filter must not be terminal.
-        if (factory->IsTerminalFilter()) {
+        if (filter_impl->IsTerminalFilter()) {
           errors->AddError(absl::StrCat(
               "terminal filter for config type ", http_filter.config_proto_type,
               " must be the last filter in the chain"));
         }
       } else {
         // The last filter must be terminal.
-        if (!factory->IsTerminalFilter()) {
+        if (!filter_impl->IsTerminalFilter()) {
           errors->AddError(absl::StrCat("non-terminal filter for config type ",
                                         http_filter.config_proto_type,
                                         " is the last filter in the chain"));
@@ -672,7 +668,6 @@ std::optional<FilterChain> FilterChainParse(
   return filter_chain;
 }
 
-// TODO(roth): Merge this with ParseXdsAddress() to avoid duplication.
 std::optional<std::string> AddressParse(
     const envoy_config_core_v3_Address* address_proto,
     ValidationErrors* errors) {

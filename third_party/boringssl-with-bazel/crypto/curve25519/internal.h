@@ -19,35 +19,37 @@
 
 #include "../internal.h"
 
-BSSL_NAMESPACE_BEGIN
+#if defined(__cplusplus)
+extern "C" {
+#endif
 
 #if defined(OPENSSL_ARM) && !defined(OPENSSL_NO_ASM) && !defined(OPENSSL_APPLE)
 #define BORINGSSL_X25519_NEON
 
 // x25519_NEON is defined in asm/x25519-arm.S.
-extern "C" void x25519_NEON(uint8_t out[32], const uint8_t scalar[32],
-                            const uint8_t point[32]);
+void x25519_NEON(uint8_t out[32], const uint8_t scalar[32],
+                 const uint8_t point[32]);
 #endif
 
 #if !defined(OPENSSL_NO_ASM) && !defined(OPENSSL_SMALL) && \
-    (defined(__APPLE__) || defined(__ELF__)) && defined(OPENSSL_X86_64)
+    defined(__GNUC__) && defined(__x86_64__) && !defined(OPENSSL_WINDOWS)
 #define BORINGSSL_FE25519_ADX
 
 // fiat_curve25519_adx_mul is defined in
 // third_party/fiat/asm/fiat_curve25519_adx_mul.S
-extern "C" void __attribute__((sysv_abi)) fiat_curve25519_adx_mul(
-    uint64_t out[4], const uint64_t in1[4], const uint64_t in2[4]);
+void __attribute__((sysv_abi))
+fiat_curve25519_adx_mul(uint64_t out[4], const uint64_t in1[4],
+                        const uint64_t in2[4]);
 
 // fiat_curve25519_adx_square is defined in
 // third_party/fiat/asm/fiat_curve25519_adx_square.S
-extern "C" void __attribute__((sysv_abi)) fiat_curve25519_adx_square(
-    uint64_t out[4], const uint64_t in[4]);
+void __attribute__((sysv_abi))
+fiat_curve25519_adx_square(uint64_t out[4], const uint64_t in[4]);
 
 // x25519_scalar_mult_adx is defined in third_party/fiat/curve25519_64_adx.h
 void x25519_scalar_mult_adx(uint8_t out[32], const uint8_t scalar[32],
                             const uint8_t point[32]);
 void x25519_ge_scalarmult_base_adx(uint8_t h[4][32], const uint8_t a[32]);
-
 #endif
 
 #if defined(OPENSSL_64_BIT)
@@ -138,8 +140,6 @@ enum spake2_state_t {
   spake2_state_key_generated,
 };
 
-BSSL_NAMESPACE_END
-
 struct spake2_ctx_st {
   uint8_t private_key[32];
   uint8_t my_msg[32];
@@ -150,14 +150,15 @@ struct spake2_ctx_st {
   uint8_t *their_name;
   size_t their_name_len;
   enum spake2_role_t my_role;
-  enum bssl::spake2_state_t state;
+  enum spake2_state_t state;
   char disable_password_scalar_hack;
 };
 
-BSSL_NAMESPACE_BEGIN
 
 extern const uint8_t k25519Precomp[32][8][3][32];
 
-BSSL_NAMESPACE_END
+#if defined(__cplusplus)
+}  // extern C
+#endif
 
 #endif  // OPENSSL_HEADER_CRYPTO_CURVE25519_INTERNAL_H

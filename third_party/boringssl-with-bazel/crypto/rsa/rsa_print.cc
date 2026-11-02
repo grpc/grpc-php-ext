@@ -18,8 +18,10 @@
 
 
 int RSA_print(BIO *bio, const RSA *rsa, int indent) {
-  bssl::UniquePtr<EVP_PKEY> pkey(EVP_PKEY_new());
-  return pkey != nullptr &&
-         EVP_PKEY_set1_RSA(pkey.get(), const_cast<RSA *>(rsa)) &&
-         EVP_PKEY_print_private(bio, pkey.get(), indent, nullptr);
+  EVP_PKEY *pkey = EVP_PKEY_new();
+  int ret = pkey != NULL &&
+            EVP_PKEY_set1_RSA(pkey, (RSA *)rsa) &&
+            EVP_PKEY_print_private(bio, pkey, indent, NULL);
+  EVP_PKEY_free(pkey);
+  return ret;
 }

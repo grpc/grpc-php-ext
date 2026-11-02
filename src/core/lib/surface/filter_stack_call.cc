@@ -137,7 +137,8 @@ grpc_error_handle FilterStackCall::Create(grpc_call_create_args* args,
         GrpcRegisteredMethod(), reinterpret_cast<void*>(static_cast<uintptr_t>(
                                     args->registered_method)));
     if (parent != nullptr) {
-      add_init_error(&error, call->InitParent(parent, args->propagation_mask));
+      add_init_error(&error, absl_status_to_grpc_error(call->InitParent(
+                                 parent, args->propagation_mask)));
     }
     // Client call tracers should be created after propagating relevant
     // properties (tracing included) from the parent.
@@ -469,7 +470,9 @@ void FilterStackCall::RecvTrailingFilter(grpc_metadata_batch* b,
       SetFinalStatus(absl::OkStatus());
     } else {
       VLOG(2) << "Received trailing metadata with no error and no status";
-      SetFinalStatus(absl::UnknownError("No status received"));
+      SetFinalStatus(grpc_error_set_int(GRPC_ERROR_CREATE("No status received"),
+                                        StatusIntProperty::kRpcStatus,
+                                        GRPC_STATUS_UNKNOWN));
     }
   }
   PublishAppMetadata(b, true);
@@ -896,9 +899,11 @@ grpc_call_error FilterStackCall::StartBatch(const grpc_op* ops, size_t nops,
         grpc_error_handle status_error =
             op->data.send_status_from_server.status == GRPC_STATUS_OK
                 ? absl::OkStatus()
-                : absl::Status(static_cast<absl::StatusCode>(
-                                   op->data.send_status_from_server.status),
-                               "Server returned error");
+                : grpc_error_set_int(
+                      GRPC_ERROR_CREATE("Server returned error"),
+                      StatusIntProperty::kRpcStatus,
+                      static_cast<intptr_t>(
+                          op->data.send_status_from_server.status));
         if (op->data.send_status_from_server.status_details != nullptr) {
           send_trailing_metadata_.Set(
               GrpcMessageMetadata(),

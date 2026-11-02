@@ -22,8 +22,6 @@
 #include "../../internal.h"
 
 
-using namespace bssl;
-
 static int bn_cmp_words_consttime(const BN_ULONG *a, size_t a_len,
                                   const BN_ULONG *b, size_t b_len) {
   static_assert(sizeof(BN_ULONG) <= sizeof(crypto_word_t),
@@ -38,7 +36,7 @@ static int bn_cmp_words_consttime(const BN_ULONG *a, size_t a_len,
         constant_time_select_int(eq, ret, constant_time_select_int(lt, -1, 1));
   }
 
-  // If `a` or `b` has non-zero words beyond `min`, they take precedence.
+  // If |a| or |b| has non-zero words beyond |min|, they take precedence.
   if (a_len < b_len) {
     crypto_word_t mask = 0;
     for (size_t i = a_len; i < b_len; i++) {
@@ -61,10 +59,10 @@ int BN_ucmp(const BIGNUM *a, const BIGNUM *b) {
 }
 
 int BN_cmp(const BIGNUM *a, const BIGNUM *b) {
-  if ((a == nullptr) || (b == nullptr)) {
-    if (a != nullptr) {
+  if ((a == NULL) || (b == NULL)) {
+    if (a != NULL) {
       return -1;
-    } else if (b != nullptr) {
+    } else if (b != NULL) {
       return 1;
     } else {
       return 0;
@@ -72,7 +70,7 @@ int BN_cmp(const BIGNUM *a, const BIGNUM *b) {
   }
 
   // We do not attempt to process the sign bit in constant time. Negative
-  // `BIGNUM`s should never occur in crypto, only calculators.
+  // |BIGNUM|s should never occur in crypto, only calculators.
   if (a->neg != b->neg) {
     if (a->neg) {
       return -1;
@@ -84,7 +82,7 @@ int BN_cmp(const BIGNUM *a, const BIGNUM *b) {
   return a->neg ? -ret : ret;
 }
 
-int bssl::bn_less_than_words(const BN_ULONG *a, const BN_ULONG *b, size_t len) {
+int bn_less_than_words(const BN_ULONG *a, const BN_ULONG *b, size_t len) {
   return bn_cmp_words_consttime(a, len, b, len) < 0;
 }
 
@@ -143,7 +141,7 @@ int BN_is_pow2(const BIGNUM *bn) {
 
 int BN_equal_consttime(const BIGNUM *a, const BIGNUM *b) {
   BN_ULONG mask = 0;
-  // If `a` or `b` has more words than the other, all those words must be zero.
+  // If |a| or |b| has more words than the other, all those words must be zero.
   for (int i = a->width; i < b->width; i++) {
     mask |= b->d[i];
   }

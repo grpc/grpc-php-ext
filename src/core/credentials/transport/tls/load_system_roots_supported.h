@@ -19,9 +19,8 @@
 #ifndef GRPC_SRC_CORE_CREDENTIALS_TRANSPORT_TLS_LOAD_SYSTEM_ROOTS_SUPPORTED_H
 #define GRPC_SRC_CORE_CREDENTIALS_TRANSPORT_TLS_LOAD_SYSTEM_ROOTS_SUPPORTED_H
 
+#include <grpc/slice.h>
 #include <grpc/support/port_platform.h>
-
-#include "src/core/lib/slice/slice.h"
 
 #if defined(GPR_LINUX) || defined(GPR_FREEBSD) || defined(GPR_APPLE)
 
@@ -31,7 +30,7 @@ namespace grpc_core {
 // a directory.
 // Returns such slice.
 // Exposed for testing purposes only.
-Slice CreateRootCertsBundle(const char* certs_directory);
+grpc_slice CreateRootCertsBundle(const char* certs_directory);
 
 // Gets the absolute file path needed to load a certificate file.
 // Populates path_buffer, which must be of size MAXPATHLEN.

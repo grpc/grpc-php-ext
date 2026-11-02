@@ -92,7 +92,7 @@ class SecurityHandshaker : public Handshaker {
       tsi_result result, const unsigned char* bytes_to_send,
       size_t bytes_to_send_size, tsi_handshaker_result* handshaker_result)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mu_);
-  void HandshakeFailedLocked(absl::Status error, bool peer_closed = false)
+  void HandshakeFailedLocked(absl::Status error)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mu_);
   void Finish(absl::Status status);
 
@@ -166,15 +166,14 @@ size_t SecurityHandshaker::MoveReadBufferIntoHandshakeBuffer() {
 
 // If the handshake failed or we're shutting down, clean up and invoke the
 // callback with the error.
-void SecurityHandshaker::HandshakeFailedLocked(absl::Status error,
-                                               bool peer_closed) {
+void SecurityHandshaker::HandshakeFailedLocked(absl::Status error) {
   if (error.ok()) {
     // If we were shut down after the handshake succeeded but before an
     // endpoint callback was invoked, we need to generate our own error.
     error = GRPC_ERROR_CREATE("Handshaker shutdown");
   }
   if (!is_shutdown_) {
-    tsi_handshaker_shutdown(handshaker_, peer_closed);
+    tsi_handshaker_shutdown(handshaker_);
     // Set shutdown to true so that subsequent calls to
     // security_handshaker_shutdown() do nothing.
     is_shutdown_ = true;
@@ -214,7 +213,7 @@ MakeChannelzSecurityFromAuthContext(grpc_auth_context* auth_context) {
 }  // namespace
 
 void SecurityHandshaker::OnPeerCheckedFn(grpc_error_handle error) {
-  MutexLock lock(mu_);
+  MutexLock lock(&mu_);
   on_peer_checked_ = nullptr;
   if (!error.ok() || is_shutdown_) {
     HandshakeFailedLocked(error);
@@ -408,7 +407,7 @@ void SecurityHandshaker::OnHandshakeNextDoneGrpcWrapper(
     size_t bytes_to_send_size, tsi_handshaker_result* handshaker_result) {
   RefCountedPtr<SecurityHandshaker> h(
       static_cast<SecurityHandshaker*>(user_data));
-  MutexLock lock(h->mu_);
+  MutexLock lock(&h->mu_);
   grpc_error_handle error = h->OnHandshakeNextDoneLocked(
       result, bytes_to_send, bytes_to_send_size, handshaker_result);
   if (!error.ok()) {
@@ -455,11 +454,10 @@ void SecurityHandshaker::OnHandshakeDataReceivedFromPeerFnScheduler(
 }
 
 void SecurityHandshaker::OnHandshakeDataReceivedFromPeerFn(absl::Status error) {
-  MutexLock lock(mu_);
+  MutexLock lock(&mu_);
   if (!error.ok() || is_shutdown_) {
     HandshakeFailedLocked(
-        GRPC_ERROR_CREATE_REFERENCING("Handshake read failed", &error, 1),
-        /*peer_closed=*/true);
+        GRPC_ERROR_CREATE_REFERENCING("Handshake read failed", &error, 1));
     return;
   }
   // Copy all slices received.
@@ -487,11 +485,10 @@ void SecurityHandshaker::OnHandshakeDataSentToPeerFnScheduler(
 }
 
 void SecurityHandshaker::OnHandshakeDataSentToPeerFn(absl::Status error) {
-  MutexLock lock(mu_);
+  MutexLock lock(&mu_);
   if (!error.ok() || is_shutdown_) {
     HandshakeFailedLocked(
-        GRPC_ERROR_CREATE_REFERENCING("Handshake write failed", &error, 1),
-        /*peer_closed=*/true);
+        GRPC_ERROR_CREATE_REFERENCING("Handshake write failed", &error, 1));
     return;
   }
   // We may be done.
@@ -517,11 +514,11 @@ void SecurityHandshaker::OnHandshakeDataSentToPeerFn(absl::Status error) {
 //
 
 void SecurityHandshaker::Shutdown(grpc_error_handle error) {
-  MutexLock lock(mu_);
+  MutexLock lock(&mu_);
   if (!is_shutdown_) {
     is_shutdown_ = true;
     connector_->cancel_check_peer(on_peer_checked_, std::move(error));
-    tsi_handshaker_shutdown(handshaker_, /*peer_closed=*/false);
+    tsi_handshaker_shutdown(handshaker_);
     args_->endpoint.reset();
   }
 }
@@ -529,7 +526,7 @@ void SecurityHandshaker::Shutdown(grpc_error_handle error) {
 void SecurityHandshaker::DoHandshake(
     HandshakerArgs* args,
     absl::AnyInvocable<void(absl::Status)> on_handshake_done) {
-  MutexLock lock(mu_);
+  MutexLock lock(&mu_);
   args_ = args;
   on_handshake_done_ = std::move(on_handshake_done);
   size_t bytes_received_size = MoveReadBufferIntoHandshakeBuffer();

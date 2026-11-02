@@ -67,13 +67,13 @@ const char* kCertFiles[] = {"/etc/ssl/cert.pem"};
 const char* kCertDirectories[] = {""};
 #endif                      // GPR_OPENBSD
 
-Slice GetSystemRootCerts() {
+grpc_slice GetSystemRootCerts() {
   size_t num_cert_files_ = GPR_ARRAY_SIZE(kCertFiles);
   for (size_t i = 0; i < num_cert_files_; i++) {
-    auto slice = LoadFile(kCertFiles[i]);
-    if (slice.ok()) return std::move(*slice);
+    auto slice = LoadFile(kCertFiles[i], /*add_null_terminator=*/true);
+    if (slice.ok()) return slice->TakeCSlice();
   }
-  return Slice();
+  return grpc_empty_slice();
 }
 
 }  // namespace
@@ -89,13 +89,14 @@ void GetAbsoluteFilePath(const char* valid_file_dir,
   }
 }
 
-Slice CreateRootCertsBundle(const char* certs_directory) {
+grpc_slice CreateRootCertsBundle(const char* certs_directory) {
+  grpc_slice bundle_slice = grpc_empty_slice();
   if (certs_directory == nullptr) {
-    return Slice();
+    return bundle_slice;
   }
   DIR* ca_directory = opendir(certs_directory);
   if (ca_directory == nullptr) {
-    return Slice();
+    return bundle_slice;
   }
   struct FileData {
     char path[MAXPATHLEN];
@@ -139,11 +140,12 @@ Slice CreateRootCertsBundle(const char* certs_directory) {
       close(file_descriptor);
     }
   }
-  return Slice(grpc_slice_new(bundle_string, bytes_read, gpr_free));
+  bundle_slice = grpc_slice_new(bundle_string, bytes_read, gpr_free);
+  return bundle_slice;
 }
 
-Slice LoadSystemRootCerts() {
-  Slice result;
+grpc_slice LoadSystemRootCerts() {
+  grpc_slice result = grpc_empty_slice();
   // Prioritize user-specified custom directory if flag is set.
   auto custom_dir = ConfigVars::Get().SystemSslRootsDir();
   if (!custom_dir.empty()) {
@@ -151,13 +153,13 @@ Slice LoadSystemRootCerts() {
   }
   // If the custom directory is empty/invalid/not specified, fallback to
   // distribution-specific directory.
-  if (result.empty()) {
+  if (GRPC_SLICE_IS_EMPTY(result)) {
     result = GetSystemRootCerts();
   }
-  if (result.empty()) {
+  if (GRPC_SLICE_IS_EMPTY(result)) {
     for (size_t i = 0; i < GPR_ARRAY_SIZE(kCertDirectories); i++) {
       result = CreateRootCertsBundle(kCertDirectories[i]);
-      if (!result.empty()) {
+      if (!GRPC_SLICE_IS_EMPTY(result)) {
         break;
       }
     }

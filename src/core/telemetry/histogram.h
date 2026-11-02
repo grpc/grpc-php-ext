@@ -18,7 +18,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <type_traits>
 #include <vector>
 
 #include "src/core/util/grpc_check.h"
@@ -36,35 +35,26 @@ namespace grpc_core {
 // bounds.size() - 1 includes all values greater than bounds.back().
 //
 // The bucket layout must be sorted in ascending order.
-using Int64HistogramBuckets = absl::Span<const int64_t>;
-using DoubleHistogramBuckets = absl::Span<const double>;
+using HistogramBuckets = absl::Span<const int64_t>;
 
 // Returns the bucket index for the given value in the given bounds.
 // The bounds must be sorted in ascending order.
 // The bounds array holds the upper bound of the bucket with the given index.
-template <typename T>
-size_t BucketInBoundsFor(absl::Span<const T> bounds, T value) {
+inline int64_t BucketInBoundsFor(absl::Span<const int64_t> bounds,
+                                 int64_t value) {
   GRPC_CHECK(!bounds.empty());
-  if constexpr (std::is_floating_point_v<T>) {
-    if (std::isnan(value)) {
-      LOG_EVERY_N_SEC(WARNING, 1)
-          << "Attempted to add a NaN value in a DoubleHistogram. Adding it to "
-             "the last bucket.";
-      return bounds.size() - 1;
-    }
-  }
   if (value < bounds[0]) return 0;
   if (value > bounds.back()) return bounds.size() - 1;
   // Find the first element in bounds strictly greater than value
   auto it = std::upper_bound(bounds.begin(), bounds.end(), value);
   if (it == bounds.end()) return bounds.size() - 1;
   // The bucket index is the index of the element just before it.
-  return static_cast<size_t>(std::distance(bounds.begin(), it));
+  return std::distance(bounds.begin(), it);
 }
 
-class LinearInt64HistogramShape {
+class LinearHistogramShape {
  public:
-  LinearInt64HistogramShape(int64_t min, int64_t max) : min_(min), max_(max) {}
+  LinearHistogramShape(int64_t min, int64_t max) : min_(min), max_(max) {}
 
   size_t buckets() const { return max_ - min_ + 1; }
   size_t BucketFor(int64_t value) const {
@@ -78,39 +68,9 @@ class LinearInt64HistogramShape {
   int64_t max_;
 };
 
-class LinearDoubleHistogramShape {
+class ExponentialHistogramShape {
  public:
-  LinearDoubleHistogramShape(double min, double max, size_t buckets) {
-    GRPC_CHECK_GT(buckets, 0u);
-    GRPC_CHECK_GT(max, min);
-    bounds_.reserve(buckets);
-    double step = (max - min) / static_cast<double>(buckets);
-    for (size_t i = 1; i < buckets; ++i) {
-      bounds_.push_back(min + static_cast<double>(i) * step);
-    }
-    bounds_.push_back(max);
-  }
-
-  LinearDoubleHistogramShape(const LinearDoubleHistogramShape&) = delete;
-  LinearDoubleHistogramShape& operator=(const LinearDoubleHistogramShape&) =
-      delete;
-  LinearDoubleHistogramShape(LinearDoubleHistogramShape&&) = default;
-  LinearDoubleHistogramShape& operator=(LinearDoubleHistogramShape&&) = default;
-
-  size_t buckets() const { return bounds_.size(); }
-  size_t BucketFor(double value) const {
-    return BucketInBoundsFor(absl::MakeConstSpan(bounds_), value);
-  }
-
-  DoubleHistogramBuckets bounds() const { return bounds_; }
-
- private:
-  std::vector<double> bounds_;
-};
-
-class ExponentialInt64HistogramShape {
- public:
-  ExponentialInt64HistogramShape(int64_t max, size_t buckets) {
+  ExponentialHistogramShape(int64_t max, size_t buckets) {
     GRPC_CHECK_GT(max, 0);
     // Increase if needed. As of June 2026, the maximum we are using is 100.
     // Note that the BucketFor has to do a binary search, so it's better to
@@ -144,61 +104,21 @@ class ExponentialInt64HistogramShape {
     GRPC_CHECK_EQ(bounds_.size(), buckets);
   }
 
-  ExponentialInt64HistogramShape(const ExponentialInt64HistogramShape&) =
+  ExponentialHistogramShape(const ExponentialHistogramShape&) = delete;
+  ExponentialHistogramShape& operator=(const ExponentialHistogramShape&) =
       delete;
-  ExponentialInt64HistogramShape& operator=(
-      const ExponentialInt64HistogramShape&) = delete;
-  ExponentialInt64HistogramShape(ExponentialInt64HistogramShape&&) = default;
-  ExponentialInt64HistogramShape& operator=(ExponentialInt64HistogramShape&&) =
-      default;
+  ExponentialHistogramShape(ExponentialHistogramShape&&) = default;
+  ExponentialHistogramShape& operator=(ExponentialHistogramShape&&) = default;
 
   size_t buckets() const { return bounds_.size(); }
   size_t BucketFor(int64_t value) const {
-    return BucketInBoundsFor(absl::MakeConstSpan(bounds_), value);
+    return BucketInBoundsFor(bounds_, value);
   }
 
-  Int64HistogramBuckets bounds() const { return bounds_; }
+  HistogramBuckets bounds() const { return bounds_; }
 
  private:
   std::vector<int64_t> bounds_;
-};
-
-class ExponentialDoubleHistogramShape {
- public:
-  ExponentialDoubleHistogramShape(double max, size_t buckets,
-                                  double min = 1.0) {
-    GRPC_CHECK_GT(min, 0.0);
-    GRPC_CHECK_GT(max, min);
-    GRPC_CHECK_GT(buckets, 0u);
-    bounds_.reserve(buckets);
-    if (buckets == 1) {
-      bounds_.push_back(max);
-      return;
-    }
-    double factor = std::pow(max / min, 1.0 / static_cast<double>(buckets - 1));
-    for (size_t i = 0; i < buckets - 1; ++i) {
-      bounds_.push_back(min * std::pow(factor, static_cast<double>(i)));
-    }
-    bounds_.push_back(max);
-  }
-
-  ExponentialDoubleHistogramShape(const ExponentialDoubleHistogramShape&) =
-      delete;
-  ExponentialDoubleHistogramShape& operator=(
-      const ExponentialDoubleHistogramShape&) = delete;
-  ExponentialDoubleHistogramShape(ExponentialDoubleHistogramShape&&) = default;
-  ExponentialDoubleHistogramShape& operator=(
-      ExponentialDoubleHistogramShape&&) = default;
-
-  size_t buckets() const { return bounds_.size(); }
-  size_t BucketFor(double value) const {
-    return BucketInBoundsFor(absl::MakeConstSpan(bounds_), value);
-  }
-
-  DoubleHistogramBuckets bounds() const { return bounds_; }
-
- private:
-  std::vector<double> bounds_;
 };
 
 }  // namespace grpc_core

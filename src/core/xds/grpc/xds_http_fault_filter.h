@@ -17,8 +17,11 @@
 #ifndef GRPC_SRC_CORE_XDS_GRPC_XDS_HTTP_FAULT_FILTER_H
 #define GRPC_SRC_CORE_XDS_GRPC_XDS_HTTP_FAULT_FILTER_H
 
+#include <grpc/support/port_platform.h>
+
 #include <optional>
 
+#include "src/core/lib/channel/channel_args.h"
 #include "src/core/lib/channel/channel_fwd.h"
 #include "src/core/util/validation_errors.h"
 #include "src/core/xds/grpc/xds_common_types.h"
@@ -30,7 +33,7 @@
 
 namespace grpc_core {
 
-class XdsHttpFaultFilterFactory final : public XdsHttpFilterFactory {
+class XdsHttpFaultFilter final : public XdsHttpFilterImpl {
  public:
   absl::string_view ConfigProtoName() const override;
   absl::string_view OverrideConfigProtoName() const override;

@@ -16,6 +16,7 @@
 
 #include "src/core/xds/grpc/xds_endpoint_parser.h"
 
+#include <grpc/support/port_platform.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -46,6 +47,7 @@
 #include "src/core/util/json/json_object_loader.h"
 #include "src/core/util/upb_utils.h"
 #include "src/core/util/validation_errors.h"
+#include "src/core/xds/grpc/xds_cluster_parser.h"
 #include "src/core/xds/grpc/xds_common_types_parser.h"
 #include "src/core/xds/grpc/xds_health_status.h"
 #include "src/core/xds/grpc/xds_metadata_parser.h"
@@ -354,17 +356,6 @@ absl::StatusOr<std::shared_ptr<const XdsEndpointResource>> EdsResourceParse(
           LocalityParse(context, endpoints[i], &address_set, &errors);
       if (parsed_locality.has_value()) {
         GRPC_CHECK_NE(parsed_locality->locality.lb_weight, 0u);
-        // Priorities must be contiguous starting from 0. That is fully
-        // validated below once all localities have been seen, since they may
-        // arrive in any order. Here we only reject priorities that can never
-        // satisfy it, which also bounds the size of the priorities list.
-        if (parsed_locality->priority >= locality_size) {
-          ValidationErrors::ScopedField field(&errors, ".priority");
-          errors.AddError(absl::StrCat("priority ", parsed_locality->priority,
-                                       " >= number of localities (",
-                                       locality_size, ")"));
-          continue;
-        }
         // Make sure priorities is big enough. Note that they might not
         // arrive in priority order.
         if (eds_resource->priorities.size() < parsed_locality->priority + 1) {

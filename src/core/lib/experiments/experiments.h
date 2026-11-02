@@ -77,6 +77,10 @@ inline bool IsChaoticGoodSendSupportedFeaturesEnabled() { return true; }
 inline bool IsCustomFrameCheckEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_CLIENT
 inline bool IsEventEngineClientEnabled() { return true; }
+#define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_DNS
+inline bool IsEventEngineDnsEnabled() { return true; }
+#define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_DNS_NON_CLIENT_CHANNEL
+inline bool IsEventEngineDnsNonClientChannelEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_FORK
 inline bool IsEventEngineForkEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_LISTENER
@@ -86,7 +90,6 @@ inline bool IsEventEngineCallbackCqEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_FOR_ALL_OTHER_ENDPOINTS
 inline bool IsEventEngineForAllOtherEndpointsEnabled() { return true; }
 inline bool IsFailRecvMetadataOnDeadlineExceededEnabled() { return false; }
-inline bool IsFixV3FilterStackServerSideOrderingEnabled() { return false; }
 inline bool IsFreeLargeAllocatorEnabled() { return false; }
 inline bool IsFuseFiltersEnabled() { return false; }
 inline bool IsH2MaxDeallocatingStreamsHeadroomEnabled() { return false; }
@@ -94,11 +97,8 @@ inline bool IsH2MaxDeallocatingStreamsHeadroomEnabled() { return false; }
 inline bool IsHeaderDataFrameEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_INPROC_CANCEL_STREAM
 inline bool IsInprocCancelStreamEnabled() { return true; }
-inline bool IsInternalFixEnabled() { return false; }
 inline bool IsKeepAlivePingTimerBatchEnabled() { return false; }
 inline bool IsLocalConnectorSecureEnabled() { return false; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_MAP_HOST_HEADER_TO_AUTHORITY
-inline bool IsMapHostHeaderToAuthorityEnabled() { return true; }
 inline bool IsMemoryOptimization01Enabled() { return false; }
 inline bool IsMemoryOptimization02Enabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_MESSAGE_SIZE_REFACTORING
@@ -107,6 +107,7 @@ inline bool IsMetadataOutstandingTokenRefactorEnabled() { return false; }
 inline bool IsMetadataPublishToAppTagEnabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_MONITORING_EXPERIMENT
 inline bool IsMonitoringExperimentEnabled() { return true; }
+inline bool IsMultipingEnabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_OPTIMIZATION_01
 inline bool IsOptimization01Enabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_OPTIMIZATION_02
@@ -130,29 +131,26 @@ inline bool IsPrioritizeFinishedRequestsEnabled() { return false; }
 inline bool IsPromiseBasedInprocTransportEnabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_PROMISE_BATCH_CLEANUP_ON_CANCEL
 inline bool IsPromiseBatchCleanupOnCancelEnabled() { return true; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_PROMISE_FILTER_SEND_CANCEL_METADATA
-inline bool IsPromiseFilterSendCancelMetadataEnabled() { return true; }
-inline bool IsRecvMessageFilterBypassFixEnabled() { return false; }
+inline bool IsPromiseFilterSendCancelMetadataEnabled() { return false; }
 inline bool IsRetryInCallv3Enabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_RETURN_PREEXISTING_ERRORS
 inline bool IsReturnPreexistingErrorsEnabled() { return true; }
-inline bool IsRingHashUpdateCleanupEnabled() { return false; }
 inline bool IsScheduleCancellationOverWriteEnabled() { return false; }
 inline bool IsSecureEndpointOffloadLargeReadsEnabled() { return false; }
 inline bool IsSecureEndpointOffloadLargeWritesEnabled() { return false; }
 inline bool IsSecureEndpointReadCoalescingEnabled() { return false; }
 inline bool IsSkipClearPeerOnCancellationEnabled() { return false; }
+#define GRPC_EXPERIMENT_IS_INCLUDED_SUBCHANNEL_CONNECTION_SCALING
+inline bool IsSubchannelConnectionScalingEnabled() { return true; }
 inline bool IsTcpFrameSizeTuningEnabled() { return false; }
 inline bool IsTcpRcvLowatEnabled() { return false; }
 inline bool IsTsiFrameProtectorWithoutLocksEnabled() { return false; }
 inline bool IsUnconstrainedMaxQuotaBufferSizeEnabled() { return false; }
 inline bool IsUseCallEventEngineInCompletionQueueEnabled() { return false; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_V2_NON_OWNING_WAKER_IMPLEMENTATION
-inline bool IsV2NonOwningWakerImplementationEnabled() { return true; }
+inline bool IsV2NonOwningWakerImplementationEnabled() { return false; }
 inline bool IsVerboseChannelzConnectionLoggingEnabled() { return false; }
 inline bool IsWildcardIpExpansionRestrictionEnabled() { return false; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_XDS_SERVER_FILTER_CHAIN_PER_ROUTE
-inline bool IsXdsServerFilterChainPerRouteEnabled() { return true; }
+inline bool IsXdsServerFilterChainPerRouteEnabled() { return false; }
 
 #elif defined(GPR_WINDOWS)
 inline bool IsBufferListDeletionPrepEnabled() { return false; }
@@ -175,6 +173,10 @@ inline bool IsChaoticGoodSendSupportedFeaturesEnabled() { return true; }
 inline bool IsCustomFrameCheckEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_CLIENT
 inline bool IsEventEngineClientEnabled() { return true; }
+#define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_DNS
+inline bool IsEventEngineDnsEnabled() { return true; }
+#define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_DNS_NON_CLIENT_CHANNEL
+inline bool IsEventEngineDnsNonClientChannelEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_FORK
 inline bool IsEventEngineForkEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_LISTENER
@@ -184,7 +186,6 @@ inline bool IsEventEngineCallbackCqEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_FOR_ALL_OTHER_ENDPOINTS
 inline bool IsEventEngineForAllOtherEndpointsEnabled() { return true; }
 inline bool IsFailRecvMetadataOnDeadlineExceededEnabled() { return false; }
-inline bool IsFixV3FilterStackServerSideOrderingEnabled() { return false; }
 inline bool IsFreeLargeAllocatorEnabled() { return false; }
 inline bool IsFuseFiltersEnabled() { return false; }
 inline bool IsH2MaxDeallocatingStreamsHeadroomEnabled() { return false; }
@@ -192,11 +193,8 @@ inline bool IsH2MaxDeallocatingStreamsHeadroomEnabled() { return false; }
 inline bool IsHeaderDataFrameEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_INPROC_CANCEL_STREAM
 inline bool IsInprocCancelStreamEnabled() { return true; }
-inline bool IsInternalFixEnabled() { return false; }
 inline bool IsKeepAlivePingTimerBatchEnabled() { return false; }
 inline bool IsLocalConnectorSecureEnabled() { return false; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_MAP_HOST_HEADER_TO_AUTHORITY
-inline bool IsMapHostHeaderToAuthorityEnabled() { return true; }
 inline bool IsMemoryOptimization01Enabled() { return false; }
 inline bool IsMemoryOptimization02Enabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_MESSAGE_SIZE_REFACTORING
@@ -205,6 +203,7 @@ inline bool IsMetadataOutstandingTokenRefactorEnabled() { return false; }
 inline bool IsMetadataPublishToAppTagEnabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_MONITORING_EXPERIMENT
 inline bool IsMonitoringExperimentEnabled() { return true; }
+inline bool IsMultipingEnabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_OPTIMIZATION_01
 inline bool IsOptimization01Enabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_OPTIMIZATION_02
@@ -228,29 +227,26 @@ inline bool IsPrioritizeFinishedRequestsEnabled() { return false; }
 inline bool IsPromiseBasedInprocTransportEnabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_PROMISE_BATCH_CLEANUP_ON_CANCEL
 inline bool IsPromiseBatchCleanupOnCancelEnabled() { return true; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_PROMISE_FILTER_SEND_CANCEL_METADATA
-inline bool IsPromiseFilterSendCancelMetadataEnabled() { return true; }
-inline bool IsRecvMessageFilterBypassFixEnabled() { return false; }
+inline bool IsPromiseFilterSendCancelMetadataEnabled() { return false; }
 inline bool IsRetryInCallv3Enabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_RETURN_PREEXISTING_ERRORS
 inline bool IsReturnPreexistingErrorsEnabled() { return true; }
-inline bool IsRingHashUpdateCleanupEnabled() { return false; }
 inline bool IsScheduleCancellationOverWriteEnabled() { return false; }
 inline bool IsSecureEndpointOffloadLargeReadsEnabled() { return false; }
 inline bool IsSecureEndpointOffloadLargeWritesEnabled() { return false; }
 inline bool IsSecureEndpointReadCoalescingEnabled() { return false; }
 inline bool IsSkipClearPeerOnCancellationEnabled() { return false; }
+#define GRPC_EXPERIMENT_IS_INCLUDED_SUBCHANNEL_CONNECTION_SCALING
+inline bool IsSubchannelConnectionScalingEnabled() { return true; }
 inline bool IsTcpFrameSizeTuningEnabled() { return false; }
 inline bool IsTcpRcvLowatEnabled() { return false; }
 inline bool IsTsiFrameProtectorWithoutLocksEnabled() { return false; }
 inline bool IsUnconstrainedMaxQuotaBufferSizeEnabled() { return false; }
 inline bool IsUseCallEventEngineInCompletionQueueEnabled() { return false; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_V2_NON_OWNING_WAKER_IMPLEMENTATION
-inline bool IsV2NonOwningWakerImplementationEnabled() { return true; }
+inline bool IsV2NonOwningWakerImplementationEnabled() { return false; }
 inline bool IsVerboseChannelzConnectionLoggingEnabled() { return false; }
 inline bool IsWildcardIpExpansionRestrictionEnabled() { return false; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_XDS_SERVER_FILTER_CHAIN_PER_ROUTE
-inline bool IsXdsServerFilterChainPerRouteEnabled() { return true; }
+inline bool IsXdsServerFilterChainPerRouteEnabled() { return false; }
 
 #else
 inline bool IsBufferListDeletionPrepEnabled() { return false; }
@@ -273,6 +269,10 @@ inline bool IsChaoticGoodSendSupportedFeaturesEnabled() { return true; }
 inline bool IsCustomFrameCheckEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_CLIENT
 inline bool IsEventEngineClientEnabled() { return true; }
+#define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_DNS
+inline bool IsEventEngineDnsEnabled() { return true; }
+#define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_DNS_NON_CLIENT_CHANNEL
+inline bool IsEventEngineDnsNonClientChannelEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_FORK
 inline bool IsEventEngineForkEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_LISTENER
@@ -282,7 +282,6 @@ inline bool IsEventEngineCallbackCqEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_FOR_ALL_OTHER_ENDPOINTS
 inline bool IsEventEngineForAllOtherEndpointsEnabled() { return true; }
 inline bool IsFailRecvMetadataOnDeadlineExceededEnabled() { return false; }
-inline bool IsFixV3FilterStackServerSideOrderingEnabled() { return false; }
 inline bool IsFreeLargeAllocatorEnabled() { return false; }
 inline bool IsFuseFiltersEnabled() { return false; }
 inline bool IsH2MaxDeallocatingStreamsHeadroomEnabled() { return false; }
@@ -290,11 +289,8 @@ inline bool IsH2MaxDeallocatingStreamsHeadroomEnabled() { return false; }
 inline bool IsHeaderDataFrameEnabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_INPROC_CANCEL_STREAM
 inline bool IsInprocCancelStreamEnabled() { return true; }
-inline bool IsInternalFixEnabled() { return false; }
 inline bool IsKeepAlivePingTimerBatchEnabled() { return false; }
 inline bool IsLocalConnectorSecureEnabled() { return false; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_MAP_HOST_HEADER_TO_AUTHORITY
-inline bool IsMapHostHeaderToAuthorityEnabled() { return true; }
 inline bool IsMemoryOptimization01Enabled() { return false; }
 inline bool IsMemoryOptimization02Enabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_MESSAGE_SIZE_REFACTORING
@@ -303,6 +299,7 @@ inline bool IsMetadataOutstandingTokenRefactorEnabled() { return false; }
 inline bool IsMetadataPublishToAppTagEnabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_MONITORING_EXPERIMENT
 inline bool IsMonitoringExperimentEnabled() { return true; }
+inline bool IsMultipingEnabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_OPTIMIZATION_01
 inline bool IsOptimization01Enabled() { return true; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_OPTIMIZATION_02
@@ -326,29 +323,26 @@ inline bool IsPrioritizeFinishedRequestsEnabled() { return false; }
 inline bool IsPromiseBasedInprocTransportEnabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_PROMISE_BATCH_CLEANUP_ON_CANCEL
 inline bool IsPromiseBatchCleanupOnCancelEnabled() { return true; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_PROMISE_FILTER_SEND_CANCEL_METADATA
-inline bool IsPromiseFilterSendCancelMetadataEnabled() { return true; }
-inline bool IsRecvMessageFilterBypassFixEnabled() { return false; }
+inline bool IsPromiseFilterSendCancelMetadataEnabled() { return false; }
 inline bool IsRetryInCallv3Enabled() { return false; }
 #define GRPC_EXPERIMENT_IS_INCLUDED_RETURN_PREEXISTING_ERRORS
 inline bool IsReturnPreexistingErrorsEnabled() { return true; }
-inline bool IsRingHashUpdateCleanupEnabled() { return false; }
 inline bool IsScheduleCancellationOverWriteEnabled() { return false; }
 inline bool IsSecureEndpointOffloadLargeReadsEnabled() { return false; }
 inline bool IsSecureEndpointOffloadLargeWritesEnabled() { return false; }
 inline bool IsSecureEndpointReadCoalescingEnabled() { return false; }
 inline bool IsSkipClearPeerOnCancellationEnabled() { return false; }
+#define GRPC_EXPERIMENT_IS_INCLUDED_SUBCHANNEL_CONNECTION_SCALING
+inline bool IsSubchannelConnectionScalingEnabled() { return true; }
 inline bool IsTcpFrameSizeTuningEnabled() { return false; }
 inline bool IsTcpRcvLowatEnabled() { return false; }
 inline bool IsTsiFrameProtectorWithoutLocksEnabled() { return false; }
 inline bool IsUnconstrainedMaxQuotaBufferSizeEnabled() { return false; }
 inline bool IsUseCallEventEngineInCompletionQueueEnabled() { return false; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_V2_NON_OWNING_WAKER_IMPLEMENTATION
-inline bool IsV2NonOwningWakerImplementationEnabled() { return true; }
+inline bool IsV2NonOwningWakerImplementationEnabled() { return false; }
 inline bool IsVerboseChannelzConnectionLoggingEnabled() { return false; }
 inline bool IsWildcardIpExpansionRestrictionEnabled() { return false; }
-#define GRPC_EXPERIMENT_IS_INCLUDED_XDS_SERVER_FILTER_CHAIN_PER_ROUTE
-inline bool IsXdsServerFilterChainPerRouteEnabled() { return true; }
+inline bool IsXdsServerFilterChainPerRouteEnabled() { return false; }
 #endif
 
 #else
@@ -362,27 +356,27 @@ enum ExperimentIds {
   kExperimentIdChaoticGoodSendSupportedFeatures,
   kExperimentIdCustomFrameCheck,
   kExperimentIdEventEngineClient,
+  kExperimentIdEventEngineDns,
+  kExperimentIdEventEngineDnsNonClientChannel,
   kExperimentIdEventEngineFork,
   kExperimentIdEventEngineListener,
   kExperimentIdEventEngineCallbackCq,
   kExperimentIdEventEngineForAllOtherEndpoints,
   kExperimentIdFailRecvMetadataOnDeadlineExceeded,
-  kExperimentIdFixV3FilterStackServerSideOrdering,
   kExperimentIdFreeLargeAllocator,
   kExperimentIdFuseFilters,
   kExperimentIdH2MaxDeallocatingStreamsHeadroom,
   kExperimentIdHeaderDataFrame,
   kExperimentIdInprocCancelStream,
-  kExperimentIdInternalFix,
   kExperimentIdKeepAlivePingTimerBatch,
   kExperimentIdLocalConnectorSecure,
-  kExperimentIdMapHostHeaderToAuthority,
   kExperimentIdMemoryOptimization01,
   kExperimentIdMemoryOptimization02,
   kExperimentIdMessageSizeRefactoring,
   kExperimentIdMetadataOutstandingTokenRefactor,
   kExperimentIdMetadataPublishToAppTag,
   kExperimentIdMonitoringExperiment,
+  kExperimentIdMultiping,
   kExperimentIdOptimization01,
   kExperimentIdOptimization02,
   kExperimentIdOptimization03,
@@ -401,15 +395,14 @@ enum ExperimentIds {
   kExperimentIdPromiseBasedInprocTransport,
   kExperimentIdPromiseBatchCleanupOnCancel,
   kExperimentIdPromiseFilterSendCancelMetadata,
-  kExperimentIdRecvMessageFilterBypassFix,
   kExperimentIdRetryInCallv3,
   kExperimentIdReturnPreexistingErrors,
-  kExperimentIdRingHashUpdateCleanup,
   kExperimentIdScheduleCancellationOverWrite,
   kExperimentIdSecureEndpointOffloadLargeReads,
   kExperimentIdSecureEndpointOffloadLargeWrites,
   kExperimentIdSecureEndpointReadCoalescing,
   kExperimentIdSkipClearPeerOnCancellation,
+  kExperimentIdSubchannelConnectionScaling,
   kExperimentIdTcpFrameSizeTuning,
   kExperimentIdTcpRcvLowat,
   kExperimentIdTsiFrameProtectorWithoutLocks,
@@ -459,6 +452,14 @@ inline bool IsCustomFrameCheckEnabled() {
 inline bool IsEventEngineClientEnabled() {
   return IsExperimentEnabled<kExperimentIdEventEngineClient>();
 }
+#define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_DNS
+inline bool IsEventEngineDnsEnabled() {
+  return IsExperimentEnabled<kExperimentIdEventEngineDns>();
+}
+#define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_DNS_NON_CLIENT_CHANNEL
+inline bool IsEventEngineDnsNonClientChannelEnabled() {
+  return IsExperimentEnabled<kExperimentIdEventEngineDnsNonClientChannel>();
+}
 #define GRPC_EXPERIMENT_IS_INCLUDED_EVENT_ENGINE_FORK
 inline bool IsEventEngineForkEnabled() {
   return IsExperimentEnabled<kExperimentIdEventEngineFork>();
@@ -478,10 +479,6 @@ inline bool IsEventEngineForAllOtherEndpointsEnabled() {
 #define GRPC_EXPERIMENT_IS_INCLUDED_FAIL_RECV_METADATA_ON_DEADLINE_EXCEEDED
 inline bool IsFailRecvMetadataOnDeadlineExceededEnabled() {
   return IsExperimentEnabled<kExperimentIdFailRecvMetadataOnDeadlineExceeded>();
-}
-#define GRPC_EXPERIMENT_IS_INCLUDED_FIX_V3_FILTER_STACK_SERVER_SIDE_ORDERING
-inline bool IsFixV3FilterStackServerSideOrderingEnabled() {
-  return IsExperimentEnabled<kExperimentIdFixV3FilterStackServerSideOrdering>();
 }
 #define GRPC_EXPERIMENT_IS_INCLUDED_FREE_LARGE_ALLOCATOR
 inline bool IsFreeLargeAllocatorEnabled() {
@@ -503,10 +500,6 @@ inline bool IsHeaderDataFrameEnabled() {
 inline bool IsInprocCancelStreamEnabled() {
   return IsExperimentEnabled<kExperimentIdInprocCancelStream>();
 }
-#define GRPC_EXPERIMENT_IS_INCLUDED_INTERNAL_FIX
-inline bool IsInternalFixEnabled() {
-  return IsExperimentEnabled<kExperimentIdInternalFix>();
-}
 #define GRPC_EXPERIMENT_IS_INCLUDED_KEEP_ALIVE_PING_TIMER_BATCH
 inline bool IsKeepAlivePingTimerBatchEnabled() {
   return IsExperimentEnabled<kExperimentIdKeepAlivePingTimerBatch>();
@@ -514,10 +507,6 @@ inline bool IsKeepAlivePingTimerBatchEnabled() {
 #define GRPC_EXPERIMENT_IS_INCLUDED_LOCAL_CONNECTOR_SECURE
 inline bool IsLocalConnectorSecureEnabled() {
   return IsExperimentEnabled<kExperimentIdLocalConnectorSecure>();
-}
-#define GRPC_EXPERIMENT_IS_INCLUDED_MAP_HOST_HEADER_TO_AUTHORITY
-inline bool IsMapHostHeaderToAuthorityEnabled() {
-  return IsExperimentEnabled<kExperimentIdMapHostHeaderToAuthority>();
 }
 #define GRPC_EXPERIMENT_IS_INCLUDED_MEMORY_OPTIMIZATION_01
 inline bool IsMemoryOptimization01Enabled() {
@@ -542,6 +531,10 @@ inline bool IsMetadataPublishToAppTagEnabled() {
 #define GRPC_EXPERIMENT_IS_INCLUDED_MONITORING_EXPERIMENT
 inline bool IsMonitoringExperimentEnabled() {
   return IsExperimentEnabled<kExperimentIdMonitoringExperiment>();
+}
+#define GRPC_EXPERIMENT_IS_INCLUDED_MULTIPING
+inline bool IsMultipingEnabled() {
+  return IsExperimentEnabled<kExperimentIdMultiping>();
 }
 #define GRPC_EXPERIMENT_IS_INCLUDED_OPTIMIZATION_01
 inline bool IsOptimization01Enabled() {
@@ -615,10 +608,6 @@ inline bool IsPromiseBatchCleanupOnCancelEnabled() {
 inline bool IsPromiseFilterSendCancelMetadataEnabled() {
   return IsExperimentEnabled<kExperimentIdPromiseFilterSendCancelMetadata>();
 }
-#define GRPC_EXPERIMENT_IS_INCLUDED_RECV_MESSAGE_FILTER_BYPASS_FIX
-inline bool IsRecvMessageFilterBypassFixEnabled() {
-  return IsExperimentEnabled<kExperimentIdRecvMessageFilterBypassFix>();
-}
 #define GRPC_EXPERIMENT_IS_INCLUDED_RETRY_IN_CALLV3
 inline bool IsRetryInCallv3Enabled() {
   return IsExperimentEnabled<kExperimentIdRetryInCallv3>();
@@ -626,10 +615,6 @@ inline bool IsRetryInCallv3Enabled() {
 #define GRPC_EXPERIMENT_IS_INCLUDED_RETURN_PREEXISTING_ERRORS
 inline bool IsReturnPreexistingErrorsEnabled() {
   return IsExperimentEnabled<kExperimentIdReturnPreexistingErrors>();
-}
-#define GRPC_EXPERIMENT_IS_INCLUDED_RING_HASH_UPDATE_CLEANUP
-inline bool IsRingHashUpdateCleanupEnabled() {
-  return IsExperimentEnabled<kExperimentIdRingHashUpdateCleanup>();
 }
 #define GRPC_EXPERIMENT_IS_INCLUDED_SCHEDULE_CANCELLATION_OVER_WRITE
 inline bool IsScheduleCancellationOverWriteEnabled() {
@@ -650,6 +635,10 @@ inline bool IsSecureEndpointReadCoalescingEnabled() {
 #define GRPC_EXPERIMENT_IS_INCLUDED_SKIP_CLEAR_PEER_ON_CANCELLATION
 inline bool IsSkipClearPeerOnCancellationEnabled() {
   return IsExperimentEnabled<kExperimentIdSkipClearPeerOnCancellation>();
+}
+#define GRPC_EXPERIMENT_IS_INCLUDED_SUBCHANNEL_CONNECTION_SCALING
+inline bool IsSubchannelConnectionScalingEnabled() {
+  return IsExperimentEnabled<kExperimentIdSubchannelConnectionScaling>();
 }
 #define GRPC_EXPERIMENT_IS_INCLUDED_TCP_FRAME_SIZE_TUNING
 inline bool IsTcpFrameSizeTuningEnabled() {

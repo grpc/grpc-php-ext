@@ -53,7 +53,7 @@ FileExternalAccountCredentials::FileFetchBody::FileFetchBody(
 void FileExternalAccountCredentials::FileFetchBody::ReadFile() {
   // To retrieve the subject token, we read the file every time we make a
   // request because it may have changed since the last request.
-  auto content_slice = LoadFile(creds_->file_);
+  auto content_slice = LoadFile(creds_->file_, /*add_null_terminator=*/false);
   if (!content_slice.ok()) {
     Finish(absl::UnavailableError(content_slice.status().message()));
     return;

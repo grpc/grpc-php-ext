@@ -29,7 +29,6 @@
 #include "src/core/xds/grpc/blackboard.h"
 #include "src/core/xds/grpc/xds_common_types.h"
 #include "src/core/xds/xds_client/xds_resource_type.h"
-#include "src/core/xds/xds_client/xds_transport.h"
 #include "upb/reflection/def.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
@@ -37,9 +36,9 @@
 
 namespace grpc_core {
 
-class XdsHttpFilterFactory {
+class XdsHttpFilterImpl {
  public:
-  virtual ~XdsHttpFilterFactory() = default;
+  virtual ~XdsHttpFilterImpl() = default;
 
   // Returns the top-level filter config proto message name.
   virtual absl::string_view ConfigProtoName() const = 0;
@@ -76,7 +75,7 @@ class XdsHttpFilterFactory {
       RefCountedPtr<const FilterConfig> virtual_host_override_config,
       RefCountedPtr<const FilterConfig> route_override_config,
       RefCountedPtr<const FilterConfig> cluster_weight_override_config,
-      XdsTransportFactory& transport_factory, Blackboard& blackboard) const;
+      Blackboard& blackboard) const;
 
   // Returns true if the filter is supported on clients; false otherwise
   virtual bool IsSupportedOnClients() const = 0;
@@ -92,8 +91,8 @@ class XdsHttpFilterFactory {
   // ALL INTERFACES BELOW ARE DEPRECATED
   //
   /////////////////////////////////////////////////////////////////////////////
-  // TODO(roth): Remove these when removing the
-  // xds_server_filter_chain_per_route experiment.
+  // TODO(roth): Remove these once the server side is migrated to the new
+  // approach for passing xDS HTTP filter configs.
 
   // Service config data for the filter, returned by GenerateServiceConfig().
   struct ServiceConfigJsonEntry {

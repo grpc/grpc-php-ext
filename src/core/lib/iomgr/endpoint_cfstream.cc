@@ -101,6 +101,11 @@ static void CFStreamUnref(CFStreamEndpoint* ep) {
 static void CFStreamRef(CFStreamEndpoint* ep) { gpr_ref(&ep->refcount); }
 #endif
 
+static grpc_error_handle CFStreamAnnotateError(grpc_error_handle src_error) {
+  return grpc_error_set_int(src_error, grpc_core::StatusIntProperty::kRpcStatus,
+                            GRPC_STATUS_UNAVAILABLE);
+}
+
 static void CallReadCb(CFStreamEndpoint* ep, grpc_error_handle error) {
   if (GRPC_TRACE_FLAG_ENABLED(tcp) && ABSL_VLOG_IS_ON(2)) {
     VLOG(2) << "CFStream endpoint:" << ep << " call_read_cb " << ep->read_cb
@@ -151,7 +156,8 @@ static void ReadAction(void* arg, grpc_error_handle error) {
     grpc_slice_buffer_reset_and_unref(ep->read_slices);
     CFErrorRef stream_error = CFReadStreamCopyError(ep->read_stream);
     if (stream_error != nullptr) {
-      error = GRPC_ERROR_CREATE_FROM_CFERROR(stream_error, "Read error");
+      error = CFStreamAnnotateError(
+          GRPC_ERROR_CREATE_FROM_CFERROR(stream_error, "Read error"));
       CFRelease(stream_error);
     } else {
       error = GRPC_ERROR_CREATE("Read error");
@@ -160,7 +166,7 @@ static void ReadAction(void* arg, grpc_error_handle error) {
     EP_UNREF(ep, "read");
   } else if (read_size == 0) {
     grpc_slice_buffer_reset_and_unref(ep->read_slices);
-    CallReadCb(ep, absl::UnavailableError("Socket closed"));
+    CallReadCb(ep, CFStreamAnnotateError(GRPC_ERROR_CREATE("Socket closed")));
     EP_UNREF(ep, "read");
   } else {
     if (read_size < static_cast<CFIndex>(len)) {
@@ -188,7 +194,8 @@ static void WriteAction(void* arg, grpc_error_handle error) {
     grpc_slice_buffer_reset_and_unref(ep->write_slices);
     CFErrorRef stream_error = CFWriteStreamCopyError(ep->write_stream);
     if (stream_error != nullptr) {
-      error = GRPC_ERROR_CREATE_FROM_CFERROR(stream_error, "Write failed");
+      error = CFStreamAnnotateError(
+          GRPC_ERROR_CREATE_FROM_CFERROR(stream_error, "Write failed"));
       CFRelease(stream_error);
     } else {
       error = GRPC_ERROR_CREATE("write failed.");

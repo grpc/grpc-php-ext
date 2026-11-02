@@ -22,7 +22,6 @@
 #include <algorithm>
 #include <memory>
 #include <type_traits>
-#include <utility>
 #include <vector>
 
 namespace grpc_event_engine {

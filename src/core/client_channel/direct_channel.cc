@@ -24,13 +24,7 @@
 namespace grpc_core {
 
 absl::StatusOr<RefCountedPtr<DirectChannel>> DirectChannel::Create(
-    std::string target, ChannelArgs args) {
-  auto channel_args_mutator =
-      grpc_channel_args_get_client_channel_creation_mutator();
-  if (channel_args_mutator != nullptr) {
-    args =
-        channel_args_mutator(target.c_str(), args, GRPC_CLIENT_DIRECT_CHANNEL);
-  }
+    std::string target, const ChannelArgs& args) {
   auto* transport = args.GetObject<Transport>();
   if (transport == nullptr) {
     return absl::InvalidArgumentError("Transport not set in ChannelArgs");

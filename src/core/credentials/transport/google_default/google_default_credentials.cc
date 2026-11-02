@@ -266,13 +266,14 @@ static grpc_error_handle create_default_creds_from_path(
   if (creds_path.empty()) {
     return GRPC_ERROR_CREATE("creds_path unset");
   }
-  auto creds_data = grpc_core::LoadFile(creds_path);
+  auto creds_data =
+      grpc_core::LoadFile(creds_path, /*add_null_terminator=*/false);
   if (!creds_data.ok()) {
-    return creds_data.status();
+    return absl_status_to_grpc_error(creds_data.status());
   }
   auto json = grpc_core::JsonParse(creds_data->as_string_view());
   if (!json.ok()) {
-    return json.status();
+    return absl_status_to_grpc_error(json.status());
   }
   if (json->type() != Json::Type::kObject) {
     return GRPC_ERROR_CREATE(absl::StrCat("Failed to parse JSON \"",
@@ -314,7 +315,7 @@ static grpc_error_handle create_default_creds_from_path(
 
 static void update_tenancy() {
   gpr_once_init(&g_once, init_default_credentials);
-  grpc_core::MutexLock lock(*g_state_mu);
+  grpc_core::MutexLock lock(g_state_mu);
 
   // Try a platform-provided hint for GCE.
   if (!g_metadata_server_available) {
@@ -329,7 +330,7 @@ static void update_tenancy() {
 }
 
 static bool metadata_server_available() {
-  grpc_core::MutexLock lock(*g_state_mu);
+  grpc_core::MutexLock lock(g_state_mu);
   return static_cast<bool>(g_metadata_server_available);
 }
 
@@ -531,7 +532,7 @@ void set_gce_tenancy_checker_for_testing(grpc_gce_tenancy_checker checker) {
 void grpc_flush_cached_google_default_credentials(void) {
   ExecCtx exec_ctx;
   gpr_once_init(&g_once, init_default_credentials);
-  MutexLock lock(*g_state_mu);
+  MutexLock lock(g_state_mu);
   g_metadata_server_available = 0;
 }
 

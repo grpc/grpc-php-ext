@@ -30,6 +30,8 @@
 
 namespace grpc_core {
 
+bool WrrCustomMetricsEnabled();
+
 class WeightedRoundRobinConfig final : public LoadBalancingPolicy::Config {
  public:
   struct ParsedMetric {

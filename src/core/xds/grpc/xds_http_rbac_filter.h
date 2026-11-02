@@ -17,6 +17,8 @@
 #ifndef GRPC_SRC_CORE_XDS_GRPC_XDS_HTTP_RBAC_FILTER_H
 #define GRPC_SRC_CORE_XDS_GRPC_XDS_HTTP_RBAC_FILTER_H
 
+#include <grpc/support/port_platform.h>
+
 #include <optional>
 
 #include "src/core/lib/channel/channel_args.h"
@@ -31,7 +33,7 @@
 
 namespace grpc_core {
 
-class XdsHttpRbacFilterFactory final : public XdsHttpFilterFactory {
+class XdsHttpRbacFilter final : public XdsHttpFilterImpl {
  public:
   absl::string_view ConfigProtoName() const override;
   absl::string_view OverrideConfigProtoName() const override;

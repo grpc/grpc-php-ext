@@ -50,18 +50,19 @@
 //
 
 grpc_ssl_credentials::grpc_ssl_credentials(
-    std::string pem_root_certs, grpc_ssl_pem_key_cert_pair* pem_key_cert_pair,
+    const char* pem_root_certs, grpc_ssl_pem_key_cert_pair* pem_key_cert_pair,
     const grpc_ssl_verify_peer_options* verify_options) {
-  build_config(std::move(pem_root_certs), pem_key_cert_pair, verify_options);
+  build_config(pem_root_certs, pem_key_cert_pair, verify_options);
   // Use default (e.g. OS) root certificates if the user did not pass any root
   // certificates.
-  if (config_.pem_root_certs.empty()) {
-    absl::string_view pem_root_certs =
+  if (config_.pem_root_certs == nullptr) {
+    const char* pem_root_certs =
         grpc_core::DefaultSslRootStore::GetPemRootCerts();
-    if (pem_root_certs.empty()) {
+    if (pem_root_certs == nullptr) {
       LOG(ERROR) << "Could not get default pem root certs.";
     } else {
-      config_.pem_root_certs = std::string(pem_root_certs);
+      char* default_roots = gpr_strdup(pem_root_certs);
+      config_.pem_root_certs = default_roots;
       root_store_ = grpc_core::DefaultSslRootStore::GetRootStore();
     }
   } else {
@@ -74,6 +75,7 @@ grpc_ssl_credentials::grpc_ssl_credentials(
 }
 
 grpc_ssl_credentials::~grpc_ssl_credentials() {
+  gpr_free(config_.pem_root_certs);
   if (config_.verify_options.verify_peer_destruct != nullptr) {
     config_.verify_options.verify_peer_destruct(
         config_.verify_options.verify_peer_callback_userdata);
@@ -85,7 +87,7 @@ grpc_core::RefCountedPtr<grpc_channel_security_connector>
 grpc_ssl_credentials::create_security_connector(
     grpc_core::RefCountedPtr<grpc_call_credentials> call_creds,
     const char* target, grpc_core::ChannelArgs* args) {
-  if (config_.pem_root_certs.empty()) {
+  if (config_.pem_root_certs == nullptr) {
     LOG(ERROR) << "No root certs in config. Client-side security connector "
                   "must have root certs.";
     return nullptr;
@@ -144,14 +146,14 @@ grpc_core::UniqueTypeName grpc_ssl_credentials::Type() {
 }
 
 void grpc_ssl_credentials::build_config(
-    std::string pem_root_certs, grpc_ssl_pem_key_cert_pair* pem_key_cert_pair,
+    const char* pem_root_certs, grpc_ssl_pem_key_cert_pair* pem_key_cert_pair,
     const grpc_ssl_verify_peer_options* verify_options) {
-  config_.pem_root_certs = std::move(pem_root_certs);
+  config_.pem_root_certs = gpr_strdup(pem_root_certs);
   if (pem_key_cert_pair != nullptr) {
     GRPC_CHECK_NE(pem_key_cert_pair->private_key, nullptr);
     GRPC_CHECK_NE(pem_key_cert_pair->cert_chain, nullptr);
-    config_.pem_key_cert_pair = grpc_core::PemKeyCertPair(
-        pem_key_cert_pair->private_key, pem_key_cert_pair->cert_chain);
+    config_.pem_key_cert_pair.cert_chain = pem_key_cert_pair->cert_chain;
+    config_.pem_key_cert_pair.private_key = pem_key_cert_pair->private_key;
   }
   if (verify_options != nullptr) {
     memcpy(&config_.verify_options, verify_options,
@@ -173,7 +175,7 @@ void grpc_ssl_credentials::set_max_tls_version(
 }
 
 grpc_security_status grpc_ssl_credentials::InitializeClientHandshakerFactory(
-    const grpc_ssl_config* config, std::string pem_root_certs,
+    const grpc_ssl_config* config, const char* pem_root_certs,
     const tsi_ssl_root_certs_store* root_store,
     tsi_ssl_session_cache* ssl_session_cache,
     tsi_ssl_client_handshaker_factory** handshaker_factory) {
@@ -184,16 +186,15 @@ grpc_security_status grpc_ssl_credentials::InitializeClientHandshakerFactory(
   }
 
   bool has_key_cert_pair =
-      !grpc_core::IsPrivateKeyEmpty(config->pem_key_cert_pair.private_key()) &&
-      !config->pem_key_cert_pair.cert_chain().empty();
+      !grpc_core::IsPrivateKeyEmpty(config->pem_key_cert_pair.private_key) &&
+      !config->pem_key_cert_pair.cert_chain.empty();
   tsi_ssl_client_handshaker_options options;
-  if (pem_root_certs.empty()) {
+  if (pem_root_certs == nullptr) {
     LOG(ERROR) << "Handshaker factory creation failed. pem_root_certs cannot "
-                  "be empty";
+                  "be nullptr";
     return GRPC_SECURITY_ERROR;
   }
-  options.root_cert_info =
-      std::make_shared<tsi::RootCertInfo>(std::move(pem_root_certs));
+  options.root_cert_info = std::make_shared<tsi::RootCertInfo>(pem_root_certs);
   options.root_store = root_store;
   options.alpn_protocols =
       grpc_fill_alpn_protocol_strings(&options.num_alpn_protocols);
@@ -228,7 +229,6 @@ grpc_channel_credentials* grpc_ssl_credentials_create(
       << ")";
   GRPC_CHECK_EQ(reserved, nullptr);
 
-  if (pem_root_certs == nullptr) pem_root_certs = "";
   return new grpc_ssl_credentials(
       pem_root_certs, pem_key_cert_pair,
       reinterpret_cast<const grpc_ssl_verify_peer_options*>(verify_options));
@@ -244,7 +244,6 @@ grpc_channel_credentials* grpc_ssl_credentials_create_ex(
       << ")";
   GRPC_CHECK_EQ(reserved, nullptr);
 
-  if (pem_root_certs == nullptr) pem_root_certs = "";
   return new grpc_ssl_credentials(pem_root_certs, pem_key_cert_pair,
                                   verify_options);
 }
@@ -254,11 +253,9 @@ grpc_channel_credentials* grpc_ssl_credentials_create_ex(
 //
 
 struct grpc_ssl_server_credentials_options {
-  grpc_ssl_client_certificate_request_type client_certificate_request =
-      GRPC_SSL_DONT_REQUEST_CLIENT_CERTIFICATE;
-  std::unique_ptr<grpc_ssl_server_certificate_config> certificate_config;
-  std::unique_ptr<grpc_ssl_server_certificate_config_fetcher>
-      certificate_config_fetcher;
+  grpc_ssl_client_certificate_request_type client_certificate_request;
+  grpc_ssl_server_certificate_config* certificate_config;
+  grpc_ssl_server_certificate_config_fetcher* certificate_config_fetcher;
 };
 
 grpc_ssl_server_credentials::grpc_ssl_server_credentials(
@@ -274,6 +271,9 @@ grpc_ssl_server_credentials::grpc_ssl_server_credentials(
   }
 }
 
+grpc_ssl_server_credentials::~grpc_ssl_server_credentials() {
+  gpr_free(config_.pem_root_certs);
+}
 grpc_core::RefCountedPtr<grpc_server_security_connector>
 grpc_ssl_server_credentials::create_security_connector(
     const grpc_core::ChannelArgs& args) {
@@ -285,29 +285,29 @@ grpc_core::UniqueTypeName grpc_ssl_server_credentials::Type() {
   return kFactory.Create();
 }
 
-grpc_core::PemKeyCertPairList grpc_convert_grpc_to_key_cert_pairs(
+std::vector<tsi_ssl_pem_key_cert_pair> grpc_convert_grpc_to_tsi_cert_pairs(
     const grpc_ssl_pem_key_cert_pair* pem_key_cert_pairs,
     size_t num_key_cert_pairs) {
-  grpc_core::PemKeyCertPairList key_cert_pairs;
+  std::vector<tsi_ssl_pem_key_cert_pair> tsi_pairs;
   if (num_key_cert_pairs > 0) {
     GRPC_CHECK_NE(pem_key_cert_pairs, nullptr);
   }
   for (size_t i = 0; i < num_key_cert_pairs; i++) {
     GRPC_CHECK_NE(pem_key_cert_pairs[i].private_key, nullptr);
     GRPC_CHECK_NE(pem_key_cert_pairs[i].cert_chain, nullptr);
-    key_cert_pairs.emplace_back(pem_key_cert_pairs[i].private_key,
-                                pem_key_cert_pairs[i].cert_chain);
+    tsi_pairs.emplace_back(pem_key_cert_pairs[i].private_key,
+                           pem_key_cert_pairs[i].cert_chain);
   }
-  return key_cert_pairs;
+  return tsi_pairs;
 }
 
 void grpc_ssl_server_credentials::build_config(
-    std::string pem_root_certs, grpc_ssl_pem_key_cert_pair* pem_key_cert_pairs,
+    const char* pem_root_certs, grpc_ssl_pem_key_cert_pair* pem_key_cert_pairs,
     size_t num_key_cert_pairs,
     grpc_ssl_client_certificate_request_type client_certificate_request) {
   config_.client_certificate_request = client_certificate_request;
-  config_.pem_root_certs = std::move(pem_root_certs);
-  config_.pem_key_cert_pairs = grpc_convert_grpc_to_key_cert_pairs(
+  config_.pem_root_certs = gpr_strdup(pem_root_certs);
+  config_.pem_key_cert_pairs = grpc_convert_grpc_to_tsi_cert_pairs(
       pem_key_cert_pairs, num_key_cert_pairs);
 }
 
@@ -326,8 +326,9 @@ grpc_ssl_server_certificate_config* grpc_ssl_server_certificate_config_create(
     const grpc_ssl_pem_key_cert_pair* pem_key_cert_pairs,
     size_t num_key_cert_pairs) {
   grpc_ssl_server_certificate_config* config =
-      new grpc_ssl_server_certificate_config;
-  if (pem_root_certs != nullptr) config->pem_root_certs = pem_root_certs;
+      static_cast<grpc_ssl_server_certificate_config*>(
+          gpr_zalloc(sizeof(grpc_ssl_server_certificate_config)));
+  config->pem_root_certs = gpr_strdup(pem_root_certs);
   if (num_key_cert_pairs > 0) {
     GRPC_CHECK_NE(pem_key_cert_pairs, nullptr);
     config->pem_key_cert_pairs = static_cast<grpc_ssl_pem_key_cert_pair*>(
@@ -345,31 +346,32 @@ grpc_ssl_server_certificate_config* grpc_ssl_server_certificate_config_create(
   return config;
 }
 
-grpc_ssl_server_certificate_config::~grpc_ssl_server_certificate_config() {
-  for (size_t i = 0; i < num_key_cert_pairs; i++) {
-    gpr_free(const_cast<char*>(pem_key_cert_pairs[i].private_key));
-    gpr_free(const_cast<char*>(pem_key_cert_pairs[i].cert_chain));
-  }
-  gpr_free(pem_key_cert_pairs);
-}
-
 void grpc_ssl_server_certificate_config_destroy(
     grpc_ssl_server_certificate_config* config) {
-  delete config;
+  if (config == nullptr) return;
+  for (size_t i = 0; i < config->num_key_cert_pairs; i++) {
+    gpr_free(const_cast<char*>(config->pem_key_cert_pairs[i].private_key));
+    gpr_free(const_cast<char*>(config->pem_key_cert_pairs[i].cert_chain));
+  }
+  gpr_free(config->pem_key_cert_pairs);
+  gpr_free(config->pem_root_certs);
+  gpr_free(config);
 }
 
 grpc_ssl_server_credentials_options*
 grpc_ssl_server_credentials_create_options_using_config(
     grpc_ssl_client_certificate_request_type client_certificate_request,
     grpc_ssl_server_certificate_config* config) {
+  grpc_ssl_server_credentials_options* options = nullptr;
   if (config == nullptr) {
     LOG(ERROR) << "Certificate config must not be NULL.";
-    return nullptr;
+    goto done;
   }
-  grpc_ssl_server_credentials_options* options =
-      new grpc_ssl_server_credentials_options;
+  options = static_cast<grpc_ssl_server_credentials_options*>(
+      gpr_zalloc(sizeof(grpc_ssl_server_credentials_options)));
   options->client_certificate_request = client_certificate_request;
-  options->certificate_config.reset(config);
+  options->certificate_config = config;
+done:
   return options;
 }
 
@@ -382,13 +384,17 @@ grpc_ssl_server_credentials_create_options_using_config_fetcher(
     return nullptr;
   }
 
+  grpc_ssl_server_certificate_config_fetcher* fetcher =
+      static_cast<grpc_ssl_server_certificate_config_fetcher*>(
+          gpr_zalloc(sizeof(grpc_ssl_server_certificate_config_fetcher)));
+  fetcher->cb = cb;
+  fetcher->user_data = user_data;
+
   grpc_ssl_server_credentials_options* options =
-      new grpc_ssl_server_credentials_options;
+      static_cast<grpc_ssl_server_credentials_options*>(
+          gpr_zalloc(sizeof(grpc_ssl_server_credentials_options)));
   options->client_certificate_request = client_certificate_request;
-  options->certificate_config_fetcher =
-      std::make_unique<grpc_ssl_server_certificate_config_fetcher>();
-  options->certificate_config_fetcher->cb = cb;
-  options->certificate_config_fetcher->user_data = user_data;
+  options->certificate_config_fetcher = fetcher;
 
   return options;
 }
@@ -429,30 +435,37 @@ grpc_server_credentials* grpc_ssl_server_credentials_create_ex(
 
 grpc_server_credentials* grpc_ssl_server_credentials_create_with_options(
     grpc_ssl_server_credentials_options* options) {
-  std::unique_ptr<grpc_ssl_server_credentials_options> options_owner(options);
+  grpc_server_credentials* retval = nullptr;
 
   if (options == nullptr) {
     LOG(ERROR) << "Invalid options trying to create SSL server credentials.";
-    return nullptr;
+    goto done;
   }
 
   if (options->certificate_config == nullptr &&
       options->certificate_config_fetcher == nullptr) {
     LOG(ERROR) << "SSL server credentials options must specify either "
                   "certificate config or fetcher.";
-    return nullptr;
+    goto done;
   } else if (options->certificate_config_fetcher != nullptr &&
              options->certificate_config_fetcher->cb == nullptr) {
     LOG(ERROR) << "Certificate config fetcher callback must not be NULL.";
-    return nullptr;
+    goto done;
   }
 
-  return new grpc_ssl_server_credentials(*options);
+  retval = new grpc_ssl_server_credentials(*options);
+
+done:
+  grpc_ssl_server_credentials_options_destroy(options);
+  return retval;
 }
 
 void grpc_ssl_server_credentials_options_destroy(
     grpc_ssl_server_credentials_options* o) {
-  delete o;
+  if (o == nullptr) return;
+  gpr_free(o->certificate_config_fetcher);
+  grpc_ssl_server_certificate_config_destroy(o->certificate_config);
+  gpr_free(o);
 }
 
 namespace {

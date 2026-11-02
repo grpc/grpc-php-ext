@@ -95,8 +95,11 @@ class Oauth2TokenFetcherCredentials : public HttpTokenFetcherCredentials {
 
   UniqueTypeName type() const override;
 
-  absl::StatusOr<RefCountedPtr<Token>> ExtractToken(
-      const grpc_http_response& response) final;
+  OrphanablePtr<FetchRequest> FetchToken(
+      Timestamp deadline,
+      absl::AnyInvocable<
+          void(absl::StatusOr<RefCountedPtr<TokenFetcherCredentials::Token>>)>
+          on_done) final;
 
  private:
   int cmp_impl(const grpc_call_credentials* other) const override {

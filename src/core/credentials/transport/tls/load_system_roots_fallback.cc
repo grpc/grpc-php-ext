@@ -22,12 +22,14 @@
     !defined(GPR_APPLE) && !defined(GPR_NETBSD) && !defined(GPR_OPENBSD) &&  \
     !defined(GPR_WINDOWS)
 
+#include <grpc/slice.h>
+#include <grpc/slice_buffer.h>
+
 #include "src/core/credentials/transport/tls/load_system_roots.h"
-#include "src/core/lib/slice/slice.h"
 
 namespace grpc_core {
 
-Slice LoadSystemRootCerts() { return Slice(); }
+grpc_slice LoadSystemRootCerts() { return grpc_empty_slice(); }
 
 }  // namespace grpc_core
 

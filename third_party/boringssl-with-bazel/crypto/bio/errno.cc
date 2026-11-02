@@ -19,9 +19,7 @@
 #include "internal.h"
 
 
-using namespace bssl;
-
-int bssl::bio_errno_should_retry(int return_value) {
+int bio_errno_should_retry(int return_value) {
   if (return_value != -1) {
     return 0;
   }

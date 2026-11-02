@@ -44,7 +44,9 @@ absl::Status ServerMetadataToStatus(ServerMetadata& md) {
   absl::string_view message = error_slice != nullptr
                                   ? error_slice->as_string_view()
                                   : absl::string_view();
-  return absl::Status(static_cast<absl::StatusCode>(grpc_status), message);
+  return grpc_error_set_int(
+      absl::Status(static_cast<absl::StatusCode>(grpc_status), message),
+      StatusIntProperty::kRpcStatus, grpc_status);
 }
 
 void SetServerMetadataFromStatus(ServerMetadata& md,

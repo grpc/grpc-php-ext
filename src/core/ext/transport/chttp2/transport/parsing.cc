@@ -544,8 +544,7 @@ static grpc_error_handle init_header_skip_frame_parser(
       t->settings.acked().max_header_list_size(),
       hpack_boundary_type(t, is_eoh), priority_type,
       hpack_parser_log_info(t, HPackParser::LogInfo::kDontKnow),
-      t->mitigation_engine.get(), t->peer_string.as_string_view(),
-      t->auth_context);
+      t->mitigation_engine.get());
   return absl::OkStatus();
 }
 
@@ -632,7 +631,8 @@ error_handler:
     return absl::OkStatus();
   } else if (s != nullptr) {
     // handle stream errors by closing the stream
-    grpc_chttp2_mark_stream_closed(t, s, true, false, status);
+    grpc_chttp2_mark_stream_closed(t, s, true, false,
+                                   absl_status_to_grpc_error(status));
     grpc_error_handle rst_error = grpc_chttp2_add_rst_stream_to_next_write(
         t, t->incoming_stream_id,
         static_cast<uint32_t>(Http2ErrorCode::kProtocolError),
@@ -640,7 +640,7 @@ error_handler:
     if (GPR_UNLIKELY(!rst_error.ok())) return rst_error;
     return init_non_header_skip_frame_parser(t);
   } else {
-    return status;
+    return absl_status_to_grpc_error(status);
   }
 }
 
@@ -895,8 +895,7 @@ static grpc_error_handle init_header_frame_parser(grpc_chttp2_transport* t,
                              t->settings.acked().max_header_list_size(),
                              hpack_boundary_type(t, is_eoh), priority_type,
                              hpack_parser_log_info(t, frame_type),
-                             t->mitigation_engine.get(),
-                             t->peer_string.as_string_view(), t->auth_context);
+                             t->mitigation_engine.get());
   return absl::OkStatus();
 }
 

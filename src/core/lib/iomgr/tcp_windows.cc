@@ -206,9 +206,10 @@ static void on_read(void* tcpp, grpc_error_handle error) {
       } else {
         GRPC_TRACE_LOG(tcp, INFO) << "TCP:" << tcp << " unref read_slice";
         grpc_slice_buffer_reset_and_unref(tcp->read_slices);
-        error = absl::UnavailableError(tcp->shutting_down
-                                           ? "TCP stream shutting down"
-                                           : "End of TCP stream");
+        error = grpc_error_set_int(
+            tcp->shutting_down ? GRPC_ERROR_CREATE("TCP stream shutting down")
+                               : GRPC_ERROR_CREATE("End of TCP stream"),
+            grpc_core::StatusIntProperty::kRpcStatus, GRPC_STATUS_UNAVAILABLE);
       }
     }
   }
@@ -237,7 +238,9 @@ static void win_read(grpc_endpoint* ep, grpc_slice_buffer* read_slices,
   if (tcp->shutting_down) {
     grpc_core::ExecCtx::Run(
         DEBUG_LOCATION, cb,
-        absl::UnavailableError("TCP socket is shutting down"));
+        grpc_error_set_int(GRPC_ERROR_CREATE("TCP socket is shutting down"),
+                           grpc_core::StatusIntProperty::kRpcStatus,
+                           GRPC_STATUS_UNAVAILABLE));
     return;
   }
 
@@ -348,7 +351,9 @@ static void win_write(grpc_endpoint* ep, grpc_slice_buffer* slices,
   if (tcp->shutting_down) {
     grpc_core::ExecCtx::Run(
         DEBUG_LOCATION, cb,
-        absl::UnavailableError("TCP socket is shutting down"));
+        grpc_error_set_int(GRPC_ERROR_CREATE("TCP socket is shutting down"),
+                           grpc_core::StatusIntProperty::kRpcStatus,
+                           GRPC_STATUS_UNAVAILABLE));
     return;
   }
 

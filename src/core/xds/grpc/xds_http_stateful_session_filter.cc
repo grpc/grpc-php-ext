@@ -16,6 +16,9 @@
 
 #include "src/core/xds/grpc/xds_http_stateful_session_filter.h"
 
+#include <grpc/support/json.h>
+#include <grpc/support/port_platform.h>
+
 #include <string>
 #include <utility>
 #include <variant>
@@ -27,6 +30,9 @@
 #include "envoy/extensions/http/stateful_session/cookie/v3/cookie.upbdefs.h"
 #include "envoy/type/http/v3/cookie.upb.h"
 #include "src/core/ext/filters/stateful_session/stateful_session_filter.h"
+#include "src/core/lib/channel/channel_args.h"
+#include "src/core/util/json/json.h"
+#include "src/core/util/json/json_writer.h"
 #include "src/core/util/time.h"
 #include "src/core/util/upb_utils.h"
 #include "src/core/util/validation_errors.h"
@@ -38,18 +44,17 @@
 
 namespace grpc_core {
 
-absl::string_view XdsHttpStatefulSessionFilterFactory::ConfigProtoName() const {
+absl::string_view XdsHttpStatefulSessionFilter::ConfigProtoName() const {
   return "envoy.extensions.filters.http.stateful_session.v3.StatefulSession";
 }
 
-absl::string_view XdsHttpStatefulSessionFilterFactory::OverrideConfigProtoName()
+absl::string_view XdsHttpStatefulSessionFilter::OverrideConfigProtoName()
     const {
   return "envoy.extensions.filters.http.stateful_session.v3"
          ".StatefulSessionPerRoute";
 }
 
-void XdsHttpStatefulSessionFilterFactory::PopulateSymtab(
-    upb_DefPool* symtab) const {
+void XdsHttpStatefulSessionFilter::PopulateSymtab(upb_DefPool* symtab) const {
   envoy_extensions_filters_http_stateful_session_v3_StatefulSession_getmsgdef(
       symtab);
   envoy_extensions_filters_http_stateful_session_v3_StatefulSessionPerRoute_getmsgdef(
@@ -58,12 +63,12 @@ void XdsHttpStatefulSessionFilterFactory::PopulateSymtab(
       symtab);
 }
 
-const grpc_channel_filter* XdsHttpStatefulSessionFilterFactory::channel_filter()
+const grpc_channel_filter* XdsHttpStatefulSessionFilter::channel_filter()
     const {
   return &StatefulSessionFilter::kFilterVtable;
 }
 
-void XdsHttpStatefulSessionFilterFactory::AddFilter(
+void XdsHttpStatefulSessionFilter::AddFilter(
     FilterChainBuilder& builder,
     RefCountedPtr<const FilterConfig> config) const {
   builder.AddFilter<StatefulSessionFilter>(std::move(config));
@@ -136,7 +141,7 @@ RefCountedPtr<StatefulSessionFilter::Config> ParseStatefulSession(
 }  // namespace
 
 RefCountedPtr<const FilterConfig>
-XdsHttpStatefulSessionFilterFactory::ParseTopLevelConfig(
+XdsHttpStatefulSessionFilter::ParseTopLevelConfig(
     absl::string_view /*instance_name*/,
     const XdsResourceType::DecodeContext& context,
     const XdsExtension& extension, ValidationErrors* errors) const {
@@ -158,7 +163,7 @@ XdsHttpStatefulSessionFilterFactory::ParseTopLevelConfig(
 }
 
 RefCountedPtr<const FilterConfig>
-XdsHttpStatefulSessionFilterFactory::ParseOverrideConfig(
+XdsHttpStatefulSessionFilter::ParseOverrideConfig(
     absl::string_view /*instance_name*/,
     const XdsResourceType::DecodeContext& context,
     const XdsExtension& extension, ValidationErrors* errors) const {

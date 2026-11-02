@@ -184,7 +184,7 @@ class CdsLbConfig final : public LoadBalancingPolicy::Config {
 
   absl::string_view name() const override { return kCds; }
 
-  const RefCountedStringValue& cluster() const { return cluster_; }
+  const std::string& cluster() const { return cluster_; }
   bool is_dynamic() const { return is_dynamic_; }
 
   static const JsonLoaderInterface* JsonLoader(const JsonArgs&) {
@@ -197,7 +197,7 @@ class CdsLbConfig final : public LoadBalancingPolicy::Config {
   }
 
  private:
-  RefCountedStringValue cluster_;
+  std::string cluster_;
   bool is_dynamic_ = false;
 };
 
@@ -319,16 +319,15 @@ absl::Status CdsLb::UpdateLocked(UpdateArgs args) {
   auto new_config = args.config.TakeAsSubclass<CdsLbConfig>();
   GRPC_TRACE_LOG(cds_lb, INFO)
       << "[cdslb " << this
-      << "] received update: cluster=" << new_config->cluster().as_string_view()
+      << "] received update: cluster=" << new_config->cluster()
       << " is_dynamic=" << new_config->is_dynamic();
   GRPC_CHECK(new_config != nullptr);
   // Cluster name should never change, because we should use a different
   // child name in xds_cluster_manager in that case.
   if (cluster_name_.as_string_view().empty()) {
-    cluster_name_ = new_config->cluster();
+    cluster_name_ = RefCountedStringValue(new_config->cluster());
   } else {
-    GRPC_CHECK_EQ(cluster_name_.as_string_view(),
-                  new_config->cluster().as_string_view());
+    GRPC_CHECK_EQ(cluster_name_.as_string_view(), new_config->cluster());
   }
   // Start dynamic subscription if needed.
   if (new_config->is_dynamic() && subscription_ == nullptr) {
@@ -769,9 +768,7 @@ void CdsPriorityEndpointIterator::ForEach(
                 .SetObject(hierarchical_path_attr)
                 .Set(GRPC_ARG_ADDRESS_WEIGHT, endpoint_weight)
                 .SetObject(locality_name->Ref())
-                .Set(GRPC_ARG_XDS_LOCALITY_WEIGHT, locality.lb_weight)
-                .Set(GRPC_ARG_LB_LOCALITY,
-                     locality_name->human_readable_string().as_string_view());
+                .Set(GRPC_ARG_XDS_LOCALITY_WEIGHT, locality.lb_weight);
         if (!use_http_connect_) args = args.Remove(GRPC_ARG_XDS_HTTP_PROXY);
         callback(EndpointAddresses(endpoint.addresses(), args));
       }
