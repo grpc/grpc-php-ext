@@ -206,7 +206,6 @@ class ClientCallTracerInterface : public CallTracerAnnotationInterface {
       kXdsServiceNamespace,  // not public
       kLocality,
       kBackendService,
-      kTelemetryLabel,
       kSize  // should be last
     };
 

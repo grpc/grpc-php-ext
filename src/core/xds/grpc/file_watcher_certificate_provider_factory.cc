@@ -26,9 +26,10 @@
 #include <vector>
 
 #include "src/core/config/core_configuration.h"
-#include "src/core/config/experiment_env_var.h"
 #include "src/core/credentials/transport/tls/grpc_tls_certificate_provider.h"
 #include "src/core/util/down_cast.h"
+#include "src/core/util/env.h"
+#include "src/core/util/string.h"
 #include "absl/log/log.h"
 
 namespace grpc_core {
@@ -36,6 +37,14 @@ namespace grpc_core {
 namespace {
 
 constexpr absl::string_view kFileWatcherPlugin = "file_watcher";
+
+bool SpiffeBundleMapEnabled() {
+  auto value = GetEnv("GRPC_EXPERIMENTAL_XDS_MTLS_SPIFFE");
+  if (!value.has_value()) return false;
+  bool parsed_value;
+  bool parse_succeeded = gpr_parse_bool_value(value->c_str(), &parsed_value);
+  return parse_succeeded && parsed_value;
+}
 
 }  // namespace
 
@@ -106,7 +115,7 @@ void FileWatcherCertificateProviderFactory::Config::JsonPostLoad(
         "fields \"certificate_file\" and \"private_key_file\" must be both set "
         "or both unset");
   }
-  if (IsExperimentEnvVarEnabled("GRPC_EXPERIMENTAL_XDS_MTLS_SPIFFE")) {
+  if (SpiffeBundleMapEnabled()) {
     if (json.object().find("certificate_file") == json.object().end() &&
         json.object().find("ca_certificate_file") == json.object().end() &&
         json.object().find("spiffe_bundle_map_file") == json.object().end()) {

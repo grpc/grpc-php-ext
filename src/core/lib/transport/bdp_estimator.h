@@ -23,7 +23,6 @@
 #include <grpc/support/time.h>
 #include <inttypes.h>
 
-#include <cstdint>
 #include <string>
 
 #include "src/core/lib/debug/trace.h"
@@ -33,10 +32,6 @@
 #include "absl/strings/string_view.h"
 
 namespace grpc_core {
-
-constexpr int64_t kInitialBdpDefault = 65536;
-constexpr uint32_t kDefaultInterPingDelayMillis = 100;
-constexpr uint32_t kMaxInterPingDelaySeconds = 10;
 
 class BdpEstimator {
  public:
@@ -53,7 +48,7 @@ class BdpEstimator {
   // transport (but not necessarily started)
   void SchedulePing() {
     GRPC_TRACE_LOG(bdp_estimator, INFO)
-        << "bdp[" << peer_name_ << "]:sched acc=" << accumulator_
+        << "bdp[" << name_ << "]:sched acc=" << accumulator_
         << " est=" << estimate_;
     GRPC_CHECK(ping_state_ == PingState::UNSCHEDULED);
     ping_state_ = PingState::SCHEDULED;
@@ -61,10 +56,11 @@ class BdpEstimator {
   }
 
   // Start a ping: call after calling grpc_bdp_estimator_schedule_ping and
-  // once the ping is on the wire.
+  // once
+  // the ping is on the wire
   void StartPing() {
     GRPC_TRACE_LOG(bdp_estimator, INFO)
-        << "bdp[" << peer_name_ << "]:start acc=" << accumulator_
+        << "bdp[" << name_ << "]:start acc=" << accumulator_
         << " est=" << estimate_;
     GRPC_CHECK(ping_state_ == PingState::SCHEDULED);
     ping_state_ = PingState::STARTED;
@@ -87,7 +83,7 @@ class BdpEstimator {
   int stable_estimate_count_;
   PingState ping_state_;
   double bw_est_;
-  absl::string_view peer_name_;
+  absl::string_view name_;
 };
 
 }  // namespace grpc_core

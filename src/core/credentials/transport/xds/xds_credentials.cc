@@ -20,16 +20,17 @@
 
 #include <grpc/grpc_security_constants.h>
 #include <grpc/impl/channel_arg_names.h>
+#include <grpc/support/port_platform.h>
 
 #include <optional>
 
-#include "src/core/config/experiment_env_var.h"
 #include "src/core/credentials/transport/tls/grpc_tls_certificate_provider.h"
 #include "src/core/credentials/transport/tls/grpc_tls_credentials_options.h"
 #include "src/core/credentials/transport/tls/tls_credentials.h"
 #include "src/core/credentials/transport/tls/tls_utils.h"
 #include "src/core/lib/channel/channel_args.h"
 #include "src/core/load_balancing/xds/xds_channel_args.h"
+#include "src/core/util/env.h"
 #include "src/core/util/grpc_check.h"
 #include "src/core/util/host_port.h"
 #include "src/core/util/useful.h"
@@ -38,6 +39,15 @@
 namespace grpc_core {
 
 namespace {
+
+// TODO(mlumish): Remove this after 1.80
+bool UseChannelAuthorityIfNoSNIApplicable() {
+  auto value = GetEnv("GRPC_USE_CHANNEL_AUTHORITY_IF_NO_SNI_APPLICABLE");
+  if (!value.has_value()) return false;
+  bool parsed_value;
+  bool parse_succeeded = gpr_parse_bool_value(value->c_str(), &parsed_value);
+  return parse_succeeded && parsed_value;
+}
 
 bool XdsVerifySubjectAlternativeNames(
     const char* const* subject_alternative_names,
@@ -184,9 +194,7 @@ XdsCredentials::create_security_connector(
         tls_credentials_options->set_sni_override(
             xds_certificate_provider->sni());
       } else {
-        // TODO(mlumish): Remove this after 1.80
-        if (!IsExperimentEnvVarEnabled(
-                "GRPC_USE_CHANNEL_AUTHORITY_IF_NO_SNI_APPLICABLE")) {
+        if (!UseChannelAuthorityIfNoSNIApplicable()) {
           tls_credentials_options->set_sni_override("");
         }
       }
