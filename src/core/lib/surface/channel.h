@@ -133,7 +133,10 @@ class Channel : public UnstartedCallDestination,
   }
 
   grpc_event_engine::experimental::MemoryAllocator* memory_allocator() const {
-    return memory_allocator_;
+    if (IsTrackWritesInResourceQuotaEnabled()) {
+      return memory_allocator_;
+    }
+    return nullptr;
   }
 
  protected:

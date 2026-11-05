@@ -33,8 +33,7 @@ ResourceQuota::ResourceQuota(std::string name)
     : channelz_node_(
           MakeRefCounted<channelz::ResourceQuotaNode>(std::move(name))),
       memory_quota_(MakeMemoryQuota(channelz_node_)),
-      thread_quota_(MakeRefCounted<ThreadQuota>()),
-      stream_quota_(MakeRefCounted<StreamQuota>()) {}
+      thread_quota_(MakeRefCounted<ThreadQuota>()) {}
 
 ResourceQuota::~ResourceQuota() = default;
 

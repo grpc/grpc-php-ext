@@ -212,21 +212,8 @@ class PromiseLike<
   // NOLINTNEXTLINE - internal detail that drastically simplifies calling code.
   GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION PromiseLike(F&& f)
       : f_(std::forward<F>(f)) {}
-  template <typename Factory, typename... Args>
-  GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION explicit PromiseLike(std::in_place_t,
-                                                            Factory&& f,
-                                                            Args&&... args)
-      : f_(std::forward<Factory>(f)(std::forward<Args>(args)...)) {}
   GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION WrappedResult operator()() {
-    // For cases where f_() already returns a Poll<OriginalResult>, WrapInPoll
-    // triggers a redundant move on the OriginalResult. This poll function being
-    // very widely used this quickly adds up if the move for the underlying type
-    // is expensive.
-    if constexpr (std::is_same_v<OriginalResult, WrappedResult>) {
-      return f_();
-    } else {
-      return WrapInPoll(f_());
-    }
+    return WrapInPoll(f_());
   }
   void ToProto(grpc_channelz_v2_Promise* promise_proto,
                upb_Arena* arena) const {
@@ -249,11 +236,6 @@ class PromiseLike<
   // NOLINTNEXTLINE - internal detail that drastically simplifies calling code.
   GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION PromiseLike(F&& f)
       : f_(std::forward<F>(f)) {}
-  template <typename Factory, typename... Args>
-  GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION explicit PromiseLike(std::in_place_t,
-                                                            Factory&& f,
-                                                            Args&&... args)
-      : f_(std::forward<Factory>(f)(std::forward<Args>(args)...)) {}
   GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION Poll<Empty> operator()() {
     f_();
     return Empty{};

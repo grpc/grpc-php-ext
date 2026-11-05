@@ -19,7 +19,9 @@ extern "C" {
 #endif
 
 extern const upb_MiniTable grpc__gcp__AltsContext_msg_init;
+extern const upb_MiniTable* grpc__gcp__AltsContext_msg_init_ptr;
 extern const upb_MiniTable grpc__gcp__AltsContext__PeerAttributesEntry_msg_init;
+extern const upb_MiniTable* grpc__gcp__AltsContext__PeerAttributesEntry_msg_init_ptr;
 
 extern const upb_MiniTableFile src_proto_grpc_gcp_altscontext_proto_upb_file_layout;
 

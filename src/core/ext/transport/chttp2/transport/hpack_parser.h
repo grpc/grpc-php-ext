@@ -37,7 +37,6 @@
 #include "src/core/lib/iomgr/error.h"
 #include "src/core/lib/slice/slice.h"
 #include "src/core/lib/slice/slice_refcount.h"
-#include "src/core/mitigation_engine/mitigation_engine.h"
 #include "src/core/telemetry/call_tracer.h"
 #include "src/core/util/random_early_detection.h"
 #include "absl/random/bit_gen_ref.h"
@@ -100,8 +99,7 @@ class HPackParser {
   void BeginFrame(grpc_metadata_batch* metadata_buffer,
                   uint32_t metadata_size_soft_limit,
                   uint32_t metadata_size_hard_limit, Boundary boundary,
-                  Priority priority, LogInfo log_info,
-                  MitigationEngine* mitigation_engine);
+                  Priority priority, LogInfo log_info);
   // Start throwing away any received headers after parsing them.
   void StopBufferingFrame() { metadata_buffer_ = nullptr; }
   // Parse one slice worth of data
@@ -254,7 +252,6 @@ class HPackParser {
     uint8_t dynamic_table_updates_allowed;
     // Current parse state
     ParseState parse_state = ParseState::kTop;
-    MitigationEngine* mitigation_engine = nullptr;
     std::variant<const HPackTable::Memento*, Slice> key;
   };
 

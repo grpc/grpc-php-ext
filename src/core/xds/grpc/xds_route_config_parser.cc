@@ -398,21 +398,17 @@ XdsRouteConfigResource::TypedPerFilterConfig ParseTypedPerFilterConfig(
         DownCast<const GrpcXdsBootstrap&>(context.client->bootstrap())
             .http_filter_registry();
     const XdsHttpFilterImpl* filter_impl =
-        http_filter_registry.GetFilterForOverrideType(extension_to_use->type);
+        http_filter_registry.GetFilterForType(extension_to_use->type);
     if (filter_impl == nullptr) {
       if (!is_optional) errors->AddError("unsupported filter type");
       continue;
     }
-    auto& entry = typed_per_filter_config[std::string(key)];
-    entry.config_proto_type = filter_impl->OverrideConfigProtoName();
-    std::optional<Json> filter_config =
-        filter_impl->GenerateFilterConfigOverride(key, context,
-                                                  *extension_to_use, errors);
+    std::optional<XdsHttpFilterImpl::FilterConfig> filter_config =
+        filter_impl->GenerateFilterConfigOverride(
+            key, context, std::move(*extension_to_use), errors);
     if (filter_config.has_value()) {
-      entry.config = std::move(*filter_config);
+      typed_per_filter_config[std::string(key)] = std::move(*filter_config);
     }
-    entry.filter_config = filter_impl->ParseOverrideConfig(
-        key, context, *extension_to_use, errors);
   }
   return typed_per_filter_config;
 }
@@ -776,7 +772,7 @@ std::shared_ptr<const XdsRouteConfigResource> XdsRouteConfigResourceParse(
     const envoy_config_route_v3_RouteConfiguration* route_config,
     ValidationErrors* errors) {
   auto rds_update = std::make_shared<XdsRouteConfigResource>();
-  // Get the cluster specifier plugin map.
+  // Get the cluster spcifier plugin map.
   if (XdsRlsEnabled()) {
     rds_update->cluster_specifier_plugin_map =
         ClusterSpecifierPluginParse(context, route_config, errors);

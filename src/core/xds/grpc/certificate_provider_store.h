@@ -20,6 +20,7 @@
 #define GRPC_SRC_CORE_XDS_GRPC_CERTIFICATE_PROVIDER_STORE_H
 
 #include <grpc/grpc_security.h>
+#include <grpc/support/port_platform.h>
 
 #include <map>
 #include <string>
@@ -37,7 +38,6 @@
 #include "src/core/util/unique_type_name.h"
 #include "src/core/util/useful.h"
 #include "src/core/util/validation_errors.h"
-#include "src/core/xds/grpc/certificate_provider_store_interface.h"
 #include "absl/base/thread_annotations.h"
 #include "absl/strings/string_view.h"
 
@@ -45,8 +45,20 @@ namespace grpc_core {
 
 // Map for xDS based grpc_tls_certificate_provider instances.
 class CertificateProviderStore final
-    : public CertificateProviderStoreInterface {
+    : public InternallyRefCounted<CertificateProviderStore> {
  public:
+  struct PluginDefinition {
+    std::string plugin_name;
+    RefCountedPtr<CertificateProviderFactory::Config> config;
+
+    static const JsonLoaderInterface* JsonLoader(const JsonArgs&);
+    void JsonPostLoad(const Json& json, const JsonArgs& args,
+                      ValidationErrors* errors);
+  };
+
+  // Maps plugin instance (opaque) name to plugin definition.
+  typedef std::map<std::string, PluginDefinition> PluginDefinitionMap;
+
   explicit CertificateProviderStore(PluginDefinitionMap plugin_config_map)
       : plugin_config_map_(std::move(plugin_config_map)) {}
 
@@ -56,7 +68,9 @@ class CertificateProviderStore final
   // definition map.
   // Returns nullptr on failure to get or create a new certificate provider.
   RefCountedPtr<grpc_tls_certificate_provider> CreateOrGetCertificateProvider(
-      absl::string_view key) override;
+      absl::string_view key);
+
+  void Orphan() override { Unref(); }
 
  private:
   // A thin wrapper around `grpc_tls_certificate_provider` which allows removing

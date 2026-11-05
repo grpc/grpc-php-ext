@@ -135,8 +135,8 @@ class Map {
   using PromiseType = promise_detail::PromiseLike<Promise>;
 
  public:
-  GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION Map(Promise&& promise, Fn&& fn)
-      : promise_(std::forward<Promise>(promise)), fn_(std::forward<Fn>(fn)) {}
+  GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION Map(Promise promise, Fn fn)
+      : promise_(std::move(promise)), fn_(std::move(fn)) {}
 
   Map(const Map&) = delete;
   Map& operator=(const Map&) = delete;
@@ -185,9 +185,9 @@ class Map<Map<Promise, Fn0>, Fn1> {
   using PromiseType = typename Map<Promise, Fn0>::PromiseType;
 
  public:
-  GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION Map(Map<Promise, Fn0> map, Fn1&& fn1)
+  GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION Map(Map<Promise, Fn0> map, Fn1 fn1)
       : promise_(std::move(map.promise_)),
-        fn_(FusedFn(std::move(map.fn_), std::forward<Fn1>(fn1))) {}
+        fn_(FusedFn(std::move(map.fn_), std::move(fn1))) {}
 
   Map(const Map&) = delete;
   Map& operator=(const Map&) = delete;
@@ -228,25 +228,23 @@ class Map<Map<Promise, Fn0>, Fn1> {
 };
 
 template <typename Promise, typename Fn>
-Map(Promise&&, Fn&&) -> Map<std::decay_t<Promise>, std::decay_t<Fn>>;
+Map(Promise, Fn) -> Map<Promise, Fn>;
 
 // Maps a promise to a new promise that returns a tuple of the original result
 // and a bool indicating whether there was ever a Pending{} value observed from
 // polling.
 template <typename Promise>
-GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION inline auto CheckDelayed(
-    Promise&& promise) {
-  using P = promise_detail::PromiseLike<std::decay_t<Promise>>;
-  return
-      [delayed = false, promise = P(std::forward<Promise>(promise))]() mutable
-          -> Poll<std::tuple<typename P::Result, bool>> {
-        auto r = promise();
-        if (r.pending()) {
-          delayed = true;
-          return Pending{};
-        }
-        return std::tuple(std::move(r.value()), delayed);
-      };
+GPR_ATTRIBUTE_ALWAYS_INLINE_FUNCTION inline auto CheckDelayed(Promise promise) {
+  using P = promise_detail::PromiseLike<Promise>;
+  return [delayed = false, promise = P(std::move(promise))]() mutable
+             -> Poll<std::tuple<typename P::Result, bool>> {
+    auto r = promise();
+    if (r.pending()) {
+      delayed = true;
+      return Pending{};
+    }
+    return std::tuple(std::move(r.value()), delayed);
+  };
 }
 
 // Callable that takes a tuple and returns one element
@@ -268,7 +266,7 @@ namespace promise_detail {
 template <typename Fn>
 class MapError {
  public:
-  explicit MapError(Fn&& fn) : fn_(std::forward<Fn>(fn)) {}
+  explicit MapError(Fn fn) : fn_(std::move(fn)) {}
   absl::Status operator()(absl::Status status) {
     if (status.ok()) return status;
     return fn_(std::move(status));
@@ -286,37 +284,33 @@ class MapError {
 
 // Map status->better status in the case of errors
 template <typename Promise, typename Fn>
-auto MapErrors(Promise&& promise, Fn&& fn) {
-  return Map(std::forward<Promise>(promise),
-             promise_detail::MapError<std::decay_t<Fn>>(std::forward<Fn>(fn)));
+auto MapErrors(Promise promise, Fn fn) {
+  return Map(std::move(promise), promise_detail::MapError<Fn>(std::move(fn)));
 }
 
 // Simple mapper to add a prefix to the message of an error
 template <typename Promise>
-auto AddErrorPrefix(absl::string_view prefix, Promise&& promise) {
-  return MapErrors(
-      std::forward<Promise>(promise), [prefix](absl::Status status) {
-        absl::Status out(status.code(), absl::StrCat(prefix, status.message()));
-        status.ForEachPayload(
-            [&out](absl::string_view name, const absl::Cord& value) {
-              out.SetPayload(name, value);
-            });
-        return out;
-      });
+auto AddErrorPrefix(absl::string_view prefix, Promise promise) {
+  return MapErrors(std::move(promise), [prefix](absl::Status status) {
+    absl::Status out(status.code(), absl::StrCat(prefix, status.message()));
+    status.ForEachPayload(
+        [&out](absl::string_view name, const absl::Cord& value) {
+          out.SetPayload(name, value);
+        });
+    return out;
+  });
 }
 
 template <typename Gen, typename Promise>
-auto AddGeneratedErrorPrefix(Gen&& prefix, Promise&& promise) {
-  return MapErrors(std::forward<Promise>(promise),
-                   [prefix = std::forward<Gen>(prefix)](absl::Status status) {
-                     absl::Status out(status.code(),
-                                      absl::StrCat(prefix(), status.message()));
-                     status.ForEachPayload([&out](absl::string_view name,
-                                                  const absl::Cord& value) {
-                       out.SetPayload(name, value);
-                     });
-                     return out;
-                   });
+auto AddGeneratedErrorPrefix(Gen prefix, Promise promise) {
+  return MapErrors(std::move(promise), [prefix](absl::Status status) {
+    absl::Status out(status.code(), absl::StrCat(prefix(), status.message()));
+    status.ForEachPayload(
+        [&out](absl::string_view name, const absl::Cord& value) {
+          out.SetPayload(name, value);
+        });
+    return out;
+  });
 }
 
 // Input : A promise that resolves to Type T
@@ -327,27 +321,26 @@ auto AddGeneratedErrorPrefix(Gen&& prefix, Promise&& promise) {
 // gives an error. DiscardResult helps to discard the return value of the
 // promise.
 template <typename Promise>
-auto DiscardResult(Promise&& promise) {
-  return Map(std::forward<Promise>(promise), [](auto) {});
+auto DiscardResult(Promise promise) {
+  return Map(std::move(promise), [](auto) {});
 }
 
 // Given a promise, and N values, return a tuple with the resolved promise
 // first, and then the N values stapled to it.
 template <typename Promise, typename... Values>
-auto Staple(Promise&& promise, Values&&... values) {
-  return Map(std::forward<Promise>(promise),
-             [values = std::tuple(std::forward<Values>(values)...)](
-                 auto first_value) mutable {
-               return std::tuple_cat(std::tuple(std::move(first_value)),
-                                     std::move(values));
-             });
+auto Staple(Promise promise, Values&&... values) {
+  return Map(std::move(promise), [values = std::tuple(std::forward<Values>(
+                                      values)...)](auto first_value) mutable {
+    return std::tuple_cat(std::tuple(std::move(first_value)),
+                          std::move(values));
+  });
 }
 
 // Same as Staple, but assumes a StatusOr<X>, and returns X, Values.
 template <typename Promise, typename... Values>
-auto TryStaple(Promise&& promise, Values&&... values) {
+auto TryStaple(Promise promise, Values&&... values) {
   return Map(
-      std::forward<Promise>(promise),
+      std::move(promise),
       [values = std::tuple(std::forward<std::remove_reference_t<Values>>(
            values)...)](auto first_value) mutable
           -> absl::StatusOr<

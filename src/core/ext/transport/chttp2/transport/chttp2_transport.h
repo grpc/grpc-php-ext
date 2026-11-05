@@ -28,7 +28,6 @@
 
 #include "src/core/channelz/channelz.h"
 #include "src/core/ext/transport/chttp2/transport/flow_control.h"
-#include "src/core/ext/transport/chttp2/transport/http2_status.h"
 #include "src/core/lib/channel/channel_args.h"
 #include "src/core/lib/debug/trace.h"
 #include "src/core/lib/iomgr/buffer_list.h"
@@ -136,8 +135,6 @@ class HttpAnnotation : public CallTracerAnnotationInterface::Annotation {
   }
 
   std::string ToString() const override;
-  void ForEachKeyValue(
-      absl::FunctionRef<void(absl::string_view, ValueType)> f) const override;
 
   Type http_type() const { return type_; }
   gpr_timespec time() const { return time_; }

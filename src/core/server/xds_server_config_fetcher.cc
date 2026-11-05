@@ -211,6 +211,9 @@ class XdsServerConfigFetcher::ListenerWatcher::FilterChainMatchManager final
   absl::StatusOr<ChannelArgs> UpdateChannelArgsForConnection(
       const ChannelArgs& args, grpc_endpoint* tcp) override;
 
+  void UpdateBlackboard(const Blackboard* old_blackboard,
+                        Blackboard* new_blackboard) override;
+
   // Invoked by ListenerWatcher to start fetching referenced RDS resources.
   void StartRdsWatch(RefCountedPtr<ListenerWatcher> listener_watcher)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(&ListenerWatcher::mu_);
@@ -1048,8 +1051,8 @@ absl::StatusOr<ChannelArgs> XdsServerConfigFetcher::ListenerWatcher::
     // Find filter.  This is guaranteed to succeed, because it's checked
     // at config validation time in the XdsApi code.
     const XdsHttpFilterImpl* filter_impl =
-        http_filter_registry.GetFilterForTopLevelType(
-            http_filter.config_proto_type);
+        http_filter_registry.GetFilterForType(
+            http_filter.config.config_proto_type_name);
     GRPC_CHECK_NE(filter_impl, nullptr);
     // Some filters like the router filter are no-op filters and do not have
     // an implementation.
@@ -1103,6 +1106,27 @@ absl::StatusOr<ChannelArgs> XdsServerConfigFetcher::ListenerWatcher::
     args = args.SetObject(xds_certificate_provider);
   }
   return args;
+}
+
+void XdsServerConfigFetcher::ListenerWatcher::FilterChainMatchManager::
+    UpdateBlackboard(const Blackboard* old_blackboard,
+                     Blackboard* new_blackboard) {
+  const auto& http_filter_registry =
+      DownCast<const GrpcXdsBootstrap&>(xds_client_->bootstrap())
+          .http_filter_registry();
+  ForEachFilterChain(
+      [&](XdsListenerResource::FilterChainData& filter_chain_data) {
+        auto& hcm = filter_chain_data.http_connection_manager;
+        for (const auto& http_filter : hcm.http_filters) {
+          const XdsHttpFilterImpl* filter_impl =
+              http_filter_registry.GetFilterForType(
+                  http_filter.config.config_proto_type_name);
+          GRPC_CHECK_NE(filter_impl,
+                        nullptr);  // Enforced in config validation.
+          filter_impl->UpdateBlackboard(http_filter.config, old_blackboard,
+                                        new_blackboard);
+        }
+      });
 }
 
 //
@@ -1301,14 +1325,8 @@ void XdsServerConfigFetcher::ListenerWatcher::FilterChainMatchManager::
 }  // namespace
 }  // namespace grpc_core
 
-grpc_server_config_fetcher* grpc_server_config_fetcher_xds_create_legacy(
-    grpc_server_xds_status_notifier notifier, const grpc_channel_args* args);
-
 grpc_server_config_fetcher* grpc_server_config_fetcher_xds_create(
     grpc_server_xds_status_notifier notifier, const grpc_channel_args* args) {
-  if (!grpc_core::IsXdsServerFilterChainPerRouteEnabled()) {
-    return grpc_server_config_fetcher_xds_create_legacy(notifier, args);
-  }
   grpc_core::ExecCtx exec_ctx;
   grpc_core::ChannelArgs channel_args = grpc_core::CoreConfiguration::Get()
                                             .channel_args_preconditioning()

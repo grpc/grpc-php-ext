@@ -36,6 +36,7 @@
 #include "absl/strings/string_view.h"
 
 namespace grpc_core {
+namespace internal {
 
 class RetryGlobalConfig final : public ServiceConfigParser::ParsedConfig {
  public:
@@ -109,6 +110,7 @@ class RetryServiceConfigParser final : public ServiceConfigParser::Parser {
   static absl::string_view parser_name() { return "retry"; }
 };
 
+}  // namespace internal
 }  // namespace grpc_core
 
 #endif  // GRPC_SRC_CORE_CLIENT_CHANNEL_RETRY_SERVICE_CONFIG_H

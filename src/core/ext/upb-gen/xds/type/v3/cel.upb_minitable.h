@@ -19,7 +19,9 @@ extern "C" {
 #endif
 
 extern const upb_MiniTable xds__type__v3__CelExpression_msg_init;
+extern const upb_MiniTable* xds__type__v3__CelExpression_msg_init_ptr;
 extern const upb_MiniTable xds__type__v3__CelExtractString_msg_init;
+extern const upb_MiniTable* xds__type__v3__CelExtractString_msg_init_ptr;
 
 extern const upb_MiniTableFile xds_type_v3_cel_proto_upb_file_layout;
 

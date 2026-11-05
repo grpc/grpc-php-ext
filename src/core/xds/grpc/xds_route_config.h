@@ -38,28 +38,15 @@
 namespace grpc_core {
 
 struct XdsRouteConfigResource : public XdsResourceType::ResourceData {
-  struct FilterConfigOverride {
-    absl::string_view config_proto_type;
-    Json config;
-    RefCountedPtr<const FilterConfig> filter_config;
-
-    bool operator==(const FilterConfigOverride& other) const {
-      if (config_proto_type != other.config_proto_type) return false;
-      if (config != other.config) return false;
-      if (filter_config == nullptr) return other.filter_config != nullptr;
-      if (other.filter_config == nullptr) return false;
-      return *filter_config == *other.filter_config;
-    }
-    std::string ToString() const;
-  };
-  using TypedPerFilterConfig = std::map<std::string, FilterConfigOverride>;
+  using TypedPerFilterConfig =
+      std::map<std::string, XdsHttpFilterImpl::FilterConfig>;
 
   using ClusterSpecifierPluginMap =
       std::map<std::string /*cluster_specifier_plugin_name*/,
                std::string /*LB policy config*/>;
 
   struct RetryPolicy {
-    StatusCodeSet retry_on;
+    internal::StatusCodeSet retry_on;
     uint32_t num_retries;
 
     struct RetryBackOff {

@@ -72,8 +72,6 @@ class MetadataSizesAnnotation
         hard_limit_(hard_limit) {}
 
   std::string ToString() const override;
-  void ForEachKeyValue(
-      absl::FunctionRef<void(absl::string_view, ValueType)> f) const override;
 
  private:
   class MetadataSizeEncoder;

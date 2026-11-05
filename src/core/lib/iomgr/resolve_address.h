@@ -32,6 +32,8 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/statusor.h"
 
+#define GRPC_MAX_SOCKADDR_SIZE 128
+
 namespace grpc_core {
 extern const char* kDefaultSecurePort;
 constexpr int kDefaultSecurePortInt = 443;

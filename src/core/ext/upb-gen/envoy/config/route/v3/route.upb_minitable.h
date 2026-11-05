@@ -19,8 +19,11 @@ extern "C" {
 #endif
 
 extern const upb_MiniTable envoy__config__route__v3__RouteConfiguration_msg_init;
+extern const upb_MiniTable* envoy__config__route__v3__RouteConfiguration_msg_init_ptr;
 extern const upb_MiniTable envoy__config__route__v3__RouteConfiguration__TypedPerFilterConfigEntry_msg_init;
+extern const upb_MiniTable* envoy__config__route__v3__RouteConfiguration__TypedPerFilterConfigEntry_msg_init_ptr;
 extern const upb_MiniTable envoy__config__route__v3__Vhds_msg_init;
+extern const upb_MiniTable* envoy__config__route__v3__Vhds_msg_init_ptr;
 
 extern const upb_MiniTableFile envoy_config_route_v3_route_proto_upb_file_layout;
 

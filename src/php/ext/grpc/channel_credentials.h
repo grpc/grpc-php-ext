@@ -44,7 +44,4 @@ static inline wrapped_grpc_channel_credentials
 /* Initializes the ChannelCredentials PHP class */
 void grpc_init_channel_credentials(TSRMLS_D);
 
-/* Shuts down the ChannelCredentials PHP class */
-void grpc_shutdown_channel_credentials(TSRMLS_D);
-
 #endif /* NET_GRPC_PHP_GRPC_CHANNEL_CREDENTIALS_H_ */

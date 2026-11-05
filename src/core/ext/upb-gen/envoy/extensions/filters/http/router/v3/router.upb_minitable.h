@@ -19,7 +19,9 @@ extern "C" {
 #endif
 
 extern const upb_MiniTable envoy__extensions__filters__http__router__v3__Router_msg_init;
+extern const upb_MiniTable* envoy__extensions__filters__http__router__v3__Router_msg_init_ptr;
 extern const upb_MiniTable envoy__extensions__filters__http__router__v3__Router__UpstreamAccessLogOptions_msg_init;
+extern const upb_MiniTable* envoy__extensions__filters__http__router__v3__Router__UpstreamAccessLogOptions_msg_init_ptr;
 
 extern const upb_MiniTableFile envoy_extensions_filters_http_router_v3_router_proto_upb_file_layout;
 

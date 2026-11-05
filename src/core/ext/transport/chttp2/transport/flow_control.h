@@ -37,7 +37,6 @@
 #include "src/core/lib/transport/bdp_estimator.h"
 #include "src/core/util/grpc_check.h"
 #include "src/core/util/time.h"
-#include "absl/container/flat_hash_set.h"
 #include "absl/functional/function_ref.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
@@ -206,10 +205,6 @@ class TransportFlowControl final {
   ~TransportFlowControl() {}
 
   bool bdp_probe() const { return enable_bdp_probe_; }
-  bool ph2_enable_rx_crypto() const { return ph2_enable_rx_crypto_; }
-  void set_ph2_enable_rx_crypto(const bool enable) {
-    ph2_enable_rx_crypto_ = enable;
-  }
 
   // Returns a non-zero announce if we should send a transport update to our
   // peer, else returns zero; writing_anyway indicates if a write would happen
@@ -409,14 +404,6 @@ class TransportFlowControl final {
     return stats;
   }
 
-  void AddStreamToWindowUpdateList(const uint32_t stream_id) {
-    window_update_list_.insert(stream_id);
-  }
-  absl::flat_hash_set<uint32_t> DrainWindowUpdateList() {
-    return std::exchange(window_update_list_, {});
-  }
-  size_t window_update_list_size() const { return window_update_list_.size(); }
-
  private:
   friend class StreamFlowControl;
 
@@ -474,14 +461,6 @@ class TransportFlowControl final {
   int64_t announced_window_ = kDefaultWindow;
   uint32_t acked_init_window_ = kDefaultWindow;
   uint32_t sent_init_window_ = kDefaultWindow;
-  absl::flat_hash_set<uint32_t> window_update_list_;
-
-  // Preferred_rx_crypto_frame_sizes are advertised to the peer
-  // For CHTTP2, this is always true.
-  // For PH2, this is set by the transport based on the channel arg
-  // GRPC_ARG_EXPERIMENTAL_HTTP2_PREFERRED_CRYPTO_FRAME_SIZE.
-  // TODO(tjagtap) [PH2][CHTTP2] Edit comment when CHTTP2 is getting deleted.
-  bool ph2_enable_rx_crypto_ = true;
 };
 
 // Implementation of flow control that abides to HTTP/2 spec and attempts
@@ -620,7 +599,7 @@ class StreamFlowControl final {
     return stats;
   }
 
-  void ReportIfStalled(const bool is_client, const uint32_t stream_id,
+  void ReportIfStalled(bool is_client, uint32_t stream_id,
                        const Http2Settings& peer_settings) const {
     if (remote_window_delta() + peer_settings.initial_window_size() <= 0 ||
         tfc_->remote_window_ == 0) {

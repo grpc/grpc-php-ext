@@ -26,6 +26,7 @@
 #include "src/core/util/json/json_writer.h"
 #include "src/core/util/validation_errors.h"
 #include "absl/container/flat_hash_map.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 
 namespace grpc_core {
@@ -89,7 +90,9 @@ class XdsStructMetadataValue : public XdsMetadataValue {
 
   const Json& json() const { return json_; }
 
-  std::string ToString() const override;
+  std::string ToString() const override {
+    return absl::StrCat(type(), "{", JsonDump(json_), "}");
+  }
 
  private:
   bool Equals(const XdsMetadataValue& other) const override {
@@ -113,7 +116,9 @@ class XdsGcpAuthnAudienceMetadataValue : public XdsMetadataValue {
 
   const std::string& url() const { return url_; }
 
-  std::string ToString() const override;
+  std::string ToString() const override {
+    return absl::StrCat(type(), "{url=\"", url_, "\"}");
+  }
 
  private:
   bool Equals(const XdsMetadataValue& other) const override {
@@ -136,7 +141,9 @@ class XdsAddressMetadataValue : public XdsMetadataValue {
 
   const std::string& address() const { return address_; }
 
-  std::string ToString() const override;
+  std::string ToString() const override {
+    return absl::StrCat(type(), "{address=\"", address_, "\"}");
+  }
 
  private:
   bool Equals(const XdsMetadataValue& other) const override {

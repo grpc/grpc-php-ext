@@ -53,7 +53,6 @@
 #include "src/core/lib/event_engine/shim.h"
 #include "src/core/lib/experiments/experiments.h"
 #include "src/core/lib/iomgr/buffer_list.h"
-#include "src/core/lib/iomgr/error.h"
 #include "src/core/lib/iomgr/ev_posix.h"
 #include "src/core/lib/iomgr/event_engine_shims/endpoint.h"
 #include "src/core/lib/iomgr/socket_utils_posix.h"
@@ -754,10 +753,8 @@ static void tcp_free(grpc_tcp* tcp) {
   grpc_fd_orphan(tcp->em_fd, tcp->release_fd_cb, tcp->release_fd,
                  "tcp_unref_orphan");
   grpc_slice_buffer_destroy(&tcp->last_read_buffer);
-  if (!grpc_core::IsBufferListDeletionPrepEnabled()) {
-    tcp->tb_list.Shutdown(tcp->outgoing_buffer_arg,
-                          GRPC_ERROR_CREATE("endpoint destroyed"));
-  }
+  tcp->tb_list.Shutdown(tcp->outgoing_buffer_arg,
+                        GRPC_ERROR_CREATE("endpoint destroyed"));
   tcp->outgoing_buffer_arg = nullptr;
   delete tcp;
 }
@@ -971,14 +968,13 @@ static bool tcp_do_read(grpc_tcp* tcp, grpc_error_handle* error)
     }
 
     if (read_bytes <= 0) {
-      int saved_errno = errno;
       // 0 read size ==> end of stream
       grpc_slice_buffer_reset_and_unref(tcp->incoming_buffer);
       if (read_bytes == 0) {
         *error = tcp_annotate_error(absl::InternalError("Socket closed"));
       } else {
         *error = tcp_annotate_error(absl::InternalError(
-            absl::StrCat("recvmsg:", grpc_core::StrError(saved_errno))));
+            absl::StrCat("recvmsg:", grpc_core::StrError(errno))));
       }
       return true;
     }
@@ -1282,11 +1278,8 @@ static bool tcp_write_with_timestamps(grpc_tcp* tcp, struct msghdr* msg,
   *sent_length = length;
   // Only save timestamps if all the bytes were taken by sendmsg.
   if (sending_length == static_cast<size_t>(length)) {
-    if (!grpc_core::IsBufferListDeletionPrepEnabled()) {
-      tcp->tb_list.AddNewEntry(
-          static_cast<uint32_t>(tcp->bytes_counter + length), tcp->fd,
-          tcp->outgoing_buffer_arg);
-    }
+    tcp->tb_list.AddNewEntry(static_cast<uint32_t>(tcp->bytes_counter + length),
+                             tcp->fd, tcp->outgoing_buffer_arg);
     tcp->outgoing_buffer_arg = nullptr;
   }
   return true;
@@ -1374,9 +1367,7 @@ struct cmsghdr* process_timestamp(grpc_tcp* tcp, msghdr* msg,
     LOG(ERROR) << "Unexpected control message";
     return cmsg;
   }
-  if (!grpc_core::IsBufferListDeletionPrepEnabled()) {
-    tcp->tb_list.ProcessTimestamp(serr, opt_stats, tss);
-  }
+  tcp->tb_list.ProcessTimestamp(serr, opt_stats, tss);
   return next_cmsg;
 }
 

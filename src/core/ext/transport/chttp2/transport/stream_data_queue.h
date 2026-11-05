@@ -28,7 +28,6 @@
 #include <optional>
 #include <queue>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -40,11 +39,9 @@
 #include "src/core/ext/transport/chttp2/transport/http2_status.h"
 #include "src/core/ext/transport/chttp2/transport/message_assembler.h"
 #include "src/core/ext/transport/chttp2/transport/transport_common.h"
-#include "src/core/ext/transport/chttp2/transport/write_cycle.h"
 #include "src/core/lib/promise/activity.h"
 #include "src/core/lib/promise/context.h"
 #include "src/core/lib/promise/poll.h"
-#include "src/core/lib/resource_quota/arena.h"
 #include "src/core/lib/slice/slice_buffer.h"
 #include "src/core/util/grpc_check.h"
 #include "src/core/util/ref_counted.h"
@@ -62,8 +59,7 @@ namespace http2 {
 template <typename T>
 class SimpleQueue {
  public:
-  explicit SimpleQueue(Arena* arena, const uint32_t max_tokens)
-      : queue_(arena), max_tokens_(max_tokens) {}
+  explicit SimpleQueue(const uint32_t max_tokens) : max_tokens_(max_tokens) {}
   SimpleQueue(SimpleQueue&& rhs) = delete;
   SimpleQueue& operator=(SimpleQueue&& rhs) = delete;
   SimpleQueue(const SimpleQueue&) = delete;
@@ -103,18 +99,13 @@ class SimpleQueue {
   }
 
   // Returns true if the queue is empty. This function is NOT thread safe.
-  inline bool IsEmpty() { return queue_.Peek() == nullptr; }
-
+  bool IsEmpty() const { return queue_.empty(); }
   // Clears the queue. This function is NOT thread safe.
-  void Clear() {
-    while (queue_.Pop().has_value()) {
-    }
-    GRPC_DCHECK(IsEmpty());
-  }
+  void Clear() { std::queue<Entry>().swap(queue_); }
 
-  inline std::optional<uint32_t> GetNextEntryTokens() {
-    Entry* front = queue_.Peek();
-    return front == nullptr ? std::nullopt : std::make_optional(front->tokens);
+  inline std::optional<uint32_t> GetNextEntryTokens() const {
+    return queue_.empty() ? std::nullopt
+                          : std::make_optional(queue_.front().tokens);
   }
 
  private:
@@ -125,12 +116,11 @@ class SimpleQueue {
     if (tokens_consumed_ == 0 ||
         tokens_consumed_ <= max_tokens_consumed_threshold) {
       tokens_consumed_ += tokens;
-      const bool was_empty = IsEmpty();
-      queue_.Push(Entry{std::move(data), tokens});
+      queue_.emplace(Entry{std::move(data), tokens});
       GRPC_STREAM_DATA_QUEUE_DEBUG
           << "Enqueue successful. Data tokens: " << tokens
           << " Current tokens consumed: " << tokens_consumed_;
-      return /*became_non_empty=*/was_empty;
+      return /*became_non_empty=*/(queue_.size() == 1);
     }
 
     GRPC_STREAM_DATA_QUEUE_DEBUG
@@ -149,35 +139,33 @@ class SimpleQueue {
       return absl::InternalError("Tokens consumed overflowed.");
     }
     tokens_consumed_ += tokens;
-    const bool was_empty = IsEmpty();
-    queue_.Push(Entry{std::move(data), tokens});
+    queue_.emplace(Entry{std::move(data), tokens});
     GRPC_STREAM_DATA_QUEUE_DEBUG
         << "Immediate enqueue successful. Data tokens: " << tokens
         << " Current tokens consumed: " << tokens_consumed_;
-    return /*became_non_empty*/ was_empty;
+    return /*became_non_empty*/ (queue_.size() == 1);
   }
 
   std::optional<T> DequeueInternal(const uint32_t allowed_dequeue_tokens,
                                    const bool allow_oversized_dequeue) {
-    Entry* front = queue_.Peek();
-    if (front == nullptr ||
-        (front->tokens > allowed_dequeue_tokens && !allow_oversized_dequeue)) {
+    if (queue_.empty() || (queue_.front().tokens > allowed_dequeue_tokens &&
+                           !allow_oversized_dequeue)) {
       GRPC_STREAM_DATA_QUEUE_DEBUG
-          << "Dequeueing data."
+          << "Dequeueing data. Queue size: " << queue_.size()
           << " Max allowed dequeue tokens: " << allowed_dequeue_tokens
           << " Front tokens: "
-          << (front != nullptr ? std::to_string(front->tokens)
-                               : std::string("NA"))
+          << (!queue_.empty() ? std::to_string(queue_.front().tokens)
+                              : std::string("NA"))
           << " Allow oversized dequeue: " << allow_oversized_dequeue;
       return std::nullopt;
     }
 
-    std::optional<Entry> entry = queue_.Pop();
-    GRPC_DCHECK(entry.has_value());
-    tokens_consumed_ -= entry->tokens;
+    auto entry = std::move(queue_.front());
+    queue_.pop();
+    tokens_consumed_ -= entry.tokens;
     auto waker = std::move(waker_);
     GRPC_STREAM_DATA_QUEUE_DEBUG
-        << "Dequeue successful. Data tokens released: " << entry->tokens
+        << "Dequeue successful. Data tokens released: " << entry.tokens
         << " Current tokens consumed: " << tokens_consumed_;
 
     // TODO(akshitpatel) : [PH2][P2] : Investigate a mechanism to only wake up
@@ -185,7 +173,7 @@ class SimpleQueue {
     // this queue is revamped soon and so not spending time on optimization
     // right now.
     waker.Wakeup();
-    return std::move(entry->data);
+    return std::move(entry.data);
   }
 
   struct Entry {
@@ -193,7 +181,7 @@ class SimpleQueue {
     uint32_t tokens;
   };
 
-  ArenaSpsc<Entry> queue_;
+  std::queue<Entry> queue_;
   // The maximum number of tokens that can be enqueued. This limit is used to
   // exert back pressure on the sender. If the sender tries to enqueue more
   // tokens than this limit, the enqueue promise will not resolve until the
@@ -208,58 +196,16 @@ class SimpleQueue {
   Waker waker_;
 };
 
-// DequeueFlags is a wrapper class for the dequeue flags. The flags can only
-// be set from within the StreamDataQueue class.
-class DequeueFlags {
- public:
-  static constexpr uint8_t kResetStreamDequeued = 0x01u;
-  static constexpr uint8_t kHalfCloseDequeued = 0x02u;
-  static constexpr uint8_t kInitialMetadataDequeued = 0x04u;
-  static constexpr uint8_t kMessageDequeued = 0x08u;
-  static constexpr uint8_t kTrailingMetadataDequeued = 0x10u;
-
-  DequeueFlags() = default;
-
-  bool IsResetStreamDequeued() const {
-    return (flags_ & kResetStreamDequeued) != 0u;
-  }
-  bool IsHalfCloseDequeued() const {
-    return (flags_ & kHalfCloseDequeued) != 0u;
-  }
-  bool IsInitialMetadataDequeued() const {
-    return (flags_ & kInitialMetadataDequeued) != 0u;
-  }
-  bool IsMessageDequeued() const { return (flags_ & kMessageDequeued) != 0u; }
-  bool IsTrailingMetadataDequeued() const {
-    return (flags_ & kTrailingMetadataDequeued) != 0u;
-  }
-
-  bool operator==(uint8_t flags) const { return flags_ == flags; }
-
- private:
-  template <typename MetadataHandle>
-  friend class StreamDataQueue;
-
-  void set_reset_stream_dequeued() { flags_ |= kResetStreamDequeued; }
-  void set_half_close_dequeued() { flags_ |= kHalfCloseDequeued; }
-  void set_initial_metadata_dequeued() { flags_ |= kInitialMetadataDequeued; }
-  void set_message_dequeued() { flags_ |= kMessageDequeued; }
-  void set_trailing_metadata_dequeued() { flags_ |= kTrailingMetadataDequeued; }
-
-  uint8_t flags_ = 0u;
-};
-
 // StreamDataQueue is a thread safe.
 // Note: StreamDataQueue is a single producer single
 // consumer queue.
 template <typename MetadataHandle>
 class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
  public:
-  explicit StreamDataQueue(Arena* arena, const bool is_client,
-                           const uint32_t queue_size)
+  explicit StreamDataQueue(const bool is_client, const uint32_t queue_size)
       : stream_id_(0),
         is_client_(is_client),
-        queue_(arena, queue_size),
+        queue_(queue_size),
         initial_metadata_disassembler_(/*is_trailing_metadata=*/false),
         trailing_metadata_disassembler_(/*is_trailing_metadata=*/true) {};
   ~StreamDataQueue() = default;
@@ -313,14 +259,7 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
     GRPC_DCHECK(!is_initial_metadata_queued_);
     GRPC_DCHECK(!is_trailing_metadata_or_half_close_queued_);
     GRPC_DCHECK(metadata != nullptr);
-
-    // Stream closed before initial metadata is enqueued. This is possible
-    // if the stream is cancelled between stream creation and
-    // PullClientInitialMetadata resolving.
-    if (IsEnqueueClosed()) {
-      return StreamWritabilityUpdate{/*became_writable=*/false,
-                                     WritableStreamPriority::kStreamClosed};
-    }
+    GRPC_DCHECK(reset_stream_state_ == RstStreamState::kNotQueued);
 
     is_initial_metadata_queued_ = true;
     absl::StatusOr<bool> result = queue_.ImmediateEnqueue(
@@ -437,14 +376,12 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
   }
 
   // Enqueue Reset Stream.
-  // 1. This function is thread safe.
-  // 2. ResetStream frame can be enqueued at any point after the creation of the
-  //    stream.
-  // 3. Once ResetStream is enqueued, any enqueue calls after this will be
-  //    ignored.
+  // 1. MUST be called at most once.
+  // 3. This function is thread safe.
   absl::StatusOr<StreamWritabilityUpdate> EnqueueResetStream(
       const uint32_t error_code) {
     MutexLock lock(&mu_);
+    GRPC_DCHECK(is_initial_metadata_queued_);
 
     // This can happen when the transport tries to close the stream and the
     // stream is cancelled from the call stack.
@@ -470,26 +407,35 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
 
   //////////////////////////////////////////////////////////////////////////////
   // Dequeue Helpers
+
+  static constexpr uint8_t kResetStreamDequeued = 0x1;
+  static constexpr uint8_t kHalfCloseDequeued = 0x2;
+  static constexpr uint8_t kInitialMetadataDequeued = 0x4;
+
   struct DequeueResult {
+    std::vector<Http2Frame> frames;
     bool is_writable;
     WritableStreamPriority priority;
+    // Maybe not be extremely accurate but should be good enough for our
+    // purposes.
+    size_t total_bytes_consumed = 0u;
     size_t flow_control_tokens_consumed = 0u;
     // Bitmask of the dequeue flags.
-    DequeueFlags flags;
+    uint8_t flags = 0u;
 
     // Returns true if the reset stream was dequeued.
-    bool IsResetStreamDequeued() const { return flags.IsResetStreamDequeued(); }
-
-    // Returns true if the half close was dequeued.
-    bool IsHalfCloseDequeued() const { return flags.IsHalfCloseDequeued(); }
-
-    // Returns true if the initial metadata was dequeued.
-    bool IsInitialMetadataDequeued() const {
-      return flags.IsInitialMetadataDequeued();
+    bool ResetStreamDequeued() const {
+      return (flags & kResetStreamDequeued) != 0u;
     }
 
-    bool IsTrailingMetadataDequeued() const {
-      return flags.IsTrailingMetadataDequeued();
+    // Returns true if the half close was dequeued.
+    bool HalfCloseDequeued() const {
+      return (flags & kHalfCloseDequeued) != 0u;
+    }
+
+    // Returns true if the initial metadata was dequeued.
+    bool InitialMetadataDequeued() const {
+      return (flags & kInitialMetadataDequeued) != 0u;
     }
   };
 
@@ -516,7 +462,6 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
                               const uint32_t max_frame_length,
                               const uint32_t stream_fc_tokens,
                               HPackCompressor& encoder,
-                              FrameSender& frame_sender,
                               const bool can_send_reset_stream) {
     MutexLock lock(&mu_);
     GRPC_STREAM_DATA_QUEUE_DEBUG
@@ -533,12 +478,12 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
     // metadata enqueued has not reached HPACK encoder, so it is safe to drop
     // all frames.
     if (std::optional<DequeueResult> result =
-            HandleResetStreamLocked(can_send_reset_stream, frame_sender)) {
+            HandleResetStreamLocked(can_send_reset_stream)) {
       return std::move(*result);
     }
 
     HandleDequeue handle_dequeue(max_fc_tokens, max_frame_length, encoder,
-                                 frame_sender, *this);
+                                 *this);
     while (message_disassembler_.GetBufferedLength() <= max_fc_tokens) {
       const uint32_t tokens_to_dequeue =
           max_fc_tokens - message_disassembler_.GetBufferedLength();
@@ -557,17 +502,18 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
     GRPC_DCHECK_GE(stream_fc_tokens,
                    handle_dequeue.GetFlowControlTokensConsumed());
 
-    handle_dequeue.AppendBufferedFrames();
-
     return DequeueResult{
+        handle_dequeue.GetFrames(),
         UpdateWritableStateDequeueLocked(
             stream_fc_tokens - handle_dequeue.GetFlowControlTokensConsumed()),
         priority_,
-        /*flow_control_tokens_consumed=*/
+        handle_dequeue.GetTotalBytesConsumed(),
         handle_dequeue.GetFlowControlTokensConsumed(),
-        /*flags=*/handle_dequeue.GetDequeueFlags()};
+        handle_dequeue.GetDequeueFlags()};
   }
 
+  // TODO(tjagtap) : [PH2][P1][FlowControl] : Call this while processing
+  // window update frame.
   // Needs to be invoked when the peer sends stream flow control window update.
   // stream_fc_tokens represents the stream flow control (delta) window +
   // intial_window_size.
@@ -604,20 +550,18 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
   class HandleDequeue {
    public:
     HandleDequeue(const uint32_t max_tokens, const uint32_t max_frame_length,
-                  HPackCompressor& encoder, FrameSender& frame_sender,
-                  StreamDataQueue& queue)
+                  HPackCompressor& encoder, StreamDataQueue& queue)
         : queue_(queue),
           max_frame_length_(max_frame_length),
           max_tokens_available_(max_tokens),
           flow_control_tokens_consumed_(0),
-          encoder_(encoder),
-          frame_sender_(frame_sender) {}
+          encoder_(encoder) {}
 
     void operator()(InitialMetadataType initial_metadata) {
       GRPC_STREAM_DATA_QUEUE_DEBUG << "Preparing initial metadata for sending";
       queue_.initial_metadata_disassembler_.PrepareForSending(
           std::move(initial_metadata.metadata), encoder_);
-      dequeue_flags_.set_initial_metadata_dequeued();
+      dequeue_flags_ |= kInitialMetadataDequeued;
       MaybeAppendInitialMetadataFrames();
     }
 
@@ -625,7 +569,6 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
       GRPC_STREAM_DATA_QUEUE_DEBUG << "Preparing trailing metadata for sending";
       queue_.trailing_metadata_disassembler_.PrepareForSending(
           std::move(trailing_metadata.metadata), encoder_);
-      dequeue_flags_.set_trailing_metadata_dequeued();
     }
 
     void operator()(MessageHandle message) {
@@ -636,10 +579,10 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
 
     void operator()(GRPC_UNUSED HalfClosed half_closed) {
       GRPC_STREAM_DATA_QUEUE_DEBUG << "Preparing end of stream for sending";
-      dequeue_flags_.set_half_close_dequeued();
+      dequeue_flags_ |= kHalfCloseDequeued;
     }
 
-    void AppendBufferedFrames() {
+    std::vector<Http2Frame> GetFrames() {
       // TODO(akshitpatel) : [PH2][P3] : There is a second option here. We can
       //  only append messages here. Additionally, when Trailing
       //  Metadata/HalfClose/ResetStream is dequeued, we can first flush the
@@ -651,18 +594,20 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
       MaybeAppendMessageFrames();
       MaybeAppendEndOfStreamFrame();
       MaybeAppendTrailingMetadataFrames();
+      return std::move(frames_);
     }
 
+    size_t GetTotalBytesConsumed() const { return total_bytes_consumed_; }
     size_t GetFlowControlTokensConsumed() const {
       return flow_control_tokens_consumed_;
     }
-    DequeueFlags GetDequeueFlags() const { return dequeue_flags_; }
+    uint8_t GetDequeueFlags() const { return dequeue_flags_; }
 
    private:
     inline void MaybeAppendInitialMetadataFrames() {
       while (queue_.initial_metadata_disassembler_.HasMoreData()) {
-        GRPC_DCHECK(!dequeue_flags_.IsHalfCloseDequeued());
-        GRPC_DCHECK(!dequeue_flags_.IsResetStreamDequeued());
+        GRPC_DCHECK(!(dequeue_flags_ & kHalfCloseDequeued));
+        GRPC_DCHECK(!(dequeue_flags_ & kResetStreamDequeued));
         // TODO(akshitpatel) : [PH2][P2] : I do not think we need this.
         // HasMoreData() should be enough.
         bool is_end_headers = false;
@@ -673,7 +618,7 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
 
     inline void MaybeAppendTrailingMetadataFrames() {
       while (queue_.trailing_metadata_disassembler_.HasMoreData()) {
-        GRPC_DCHECK(!dequeue_flags_.IsHalfCloseDequeued());
+        GRPC_DCHECK(!(dequeue_flags_ & kHalfCloseDequeued));
         GRPC_DCHECK_EQ(queue_.message_disassembler_.GetBufferedLength(), 0u);
         GRPC_DCHECK_EQ(
             queue_.initial_metadata_disassembler_.GetBufferedLength(), 0u);
@@ -686,31 +631,12 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
     }
 
     inline void MaybeAppendEndOfStreamFrame() {
-      if (dequeue_flags_.IsHalfCloseDequeued()) {
+      if (dequeue_flags_ & kHalfCloseDequeued) {
         GRPC_DCHECK_EQ(queue_.message_disassembler_.GetBufferedLength(), 0u);
         GRPC_DCHECK_EQ(
             queue_.initial_metadata_disassembler_.GetBufferedLength(), 0u);
         GRPC_DCHECK_EQ(
             queue_.trailing_metadata_disassembler_.GetBufferedLength(), 0u);
-        Http2Frame* last_frame = frame_sender_.MutableLastRegularFrame();
-
-        // On the Server side, trailing metadata acts as end of stream and is
-        // always sent with END_STREAM flag set.
-        // To be inline with CHTTP2, InitialMetadata is always sent with
-        // END_STREAM flag false.
-        if (last_frame != nullptr && dequeue_flags_.IsMessageDequeued()) {
-          bool merged = std::visit(
-              [](auto& frame) -> bool {
-                using F = std::decay_t<decltype(frame)>;
-                if constexpr (std::is_same_v<F, Http2DataFrame>) {
-                  frame.end_stream = true;
-                  return true;
-                }
-                return false;
-              },
-              *last_frame);
-          if (merged) return;
-        }
         AppendFrame(Http2DataFrame{/*stream_id=*/queue_.stream_id_,
                                    /*end_stream=*/true,
                                    /*payload=*/SliceBuffer()});
@@ -732,12 +658,11 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
             << " Consumed tokens: " << flow_control_tokens_consumed_
             << " Max tokens: " << max_tokens_available_;
         AppendFrame(std::move(frame));
-        dequeue_flags_.set_message_dequeued();
       }
     }
 
     inline void MaybeAppendResetStreamFrame() {
-      if (dequeue_flags_.IsResetStreamDequeued()) {
+      if (dequeue_flags_ & kResetStreamDequeued) {
         // TODO(akshitpatel) : [PH2][P2] : Consider if we can send reset stream
         // frame without flushing all the messages enqueued until now.
         GRPC_DCHECK_EQ(queue_.message_disassembler_.GetBufferedLength(), 0u);
@@ -750,10 +675,8 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
     }
 
     inline void AppendFrame(Http2Frame&& frame) {
-      // FrameSender automatically accounts for the frame size in write quota.
-      // We do tend to overestimate the bytes consumed here but should be good
-      // enough for our purposes.
-      frame_sender_.AddRegularFrame(std::forward<Http2Frame>(frame));
+      total_bytes_consumed_ += GetFrameMemoryUsage(frame);
+      frames_.emplace_back(std::move(frame));
     }
 
     StreamDataQueue& queue_;
@@ -761,9 +684,10 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
     const uint32_t max_tokens_available_;
     uint32_t flow_control_tokens_consumed_;
     uint32_t error_code_ = static_cast<uint32_t>(Http2ErrorCode::kNoError);
+    std::vector<Http2Frame> frames_;
     HPackCompressor& encoder_;
-    FrameSender& frame_sender_;
-    DequeueFlags dequeue_flags_;
+    size_t total_bytes_consumed_ = 0u;
+    uint8_t dequeue_flags_ = 0u;
   };
 
   // Updates the writable state and priority of the stream. MUST only be called
@@ -841,9 +765,8 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
     return is_writable_;
   }
 
-  inline bool IsNextQueueEntryMessage() {
-    std::optional<size_t> next_entry_tokens = queue_.GetNextEntryTokens();
-    return next_entry_tokens.has_value() && *next_entry_tokens > 0;
+  inline bool IsNextQueueEntryMessage() const {
+    return (!queue_.IsEmpty() && queue_.GetNextEntryTokens().value() > 0);
   }
 
   // Handles the case where a reset stream is queued.
@@ -851,32 +774,37 @@ class StreamDataQueue : public RefCounted<StreamDataQueue<MetadataHandle>> {
   // DequeueResult. Otherwise, it returns std::nullopt.
   // This function must be called with mu_ held.
   std::optional<DequeueResult> HandleResetStreamLocked(
-      const bool can_send_reset_stream, FrameSender& frame_sender)
-      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+      const bool can_send_reset_stream) ABSL_EXCLUSIVE_LOCKS_REQUIRED(mu_) {
     switch (reset_stream_state_) {
       case RstStreamState::kDequeued:
         GRPC_STREAM_DATA_QUEUE_DEBUG
             << "Reset stream is already dequeued. Returning empty frames.";
         GRPC_DCHECK(queue_.IsEmpty());
         is_writable_ = false;
-        return DequeueResult{is_writable_, priority_,
-                             /*flow_control_tokens_consumed=*/0u,
-                             /*flags=*/DequeueFlags{}};
+        return DequeueResult{
+            std::vector<Http2Frame>(),           is_writable_, priority_,
+            /*total_bytes_consumed=*/0u,
+            /*flow_control_tokens_consumed=*/0u, /*flags=*/0u};
       case RstStreamState::kQueued: {
         GRPC_STREAM_DATA_QUEUE_DEBUG
             << "Reset stream is queued. Skipping all frames (if any) for "
                "dequeuing.";
         is_writable_ = false;
-        DequeueFlags flags;
+        std::vector<Http2Frame> frames;
+        uint8_t flags = 0u;
         if (can_send_reset_stream) {
-          frame_sender.AddRegularFrame(
+          frames.emplace_back(
               Http2RstStreamFrame{stream_id_, reset_stream_error_code_});
-          flags.set_reset_stream_dequeued();
+          flags = kResetStreamDequeued;
         }
         queue_.Clear();
         reset_stream_state_ = RstStreamState::kDequeued;
-        return DequeueResult{is_writable_, priority_,
-                             /*flow_control_tokens_consumed=*/0u, flags};
+        return DequeueResult{std::move(frames),
+                             is_writable_,
+                             priority_,
+                             /*total_bytes_consumed=*/0u,
+                             /*flow_control_tokens_consumed=*/0u,
+                             flags};
       }
       case RstStreamState::kNotQueued:
         return std::nullopt;

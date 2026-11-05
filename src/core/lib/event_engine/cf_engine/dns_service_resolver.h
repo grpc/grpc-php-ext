@@ -77,7 +77,8 @@ class DNSServiceResolver : public EventEngine::DNSResolver {
  public:
   explicit DNSServiceResolver(std::shared_ptr<CFEventEngine> engine)
       : engine_(std::move(engine)),
-        impl_(grpc_core::MakeRefCounted<DNSServiceResolverImpl>(engine_)) {}
+        impl_(grpc_core::MakeRefCounted<DNSServiceResolverImpl>(
+            std::move((engine_)))) {}
 
   ~DNSServiceResolver() override { impl_->Shutdown(); }
 

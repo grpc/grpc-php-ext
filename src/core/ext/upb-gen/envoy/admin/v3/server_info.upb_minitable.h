@@ -19,7 +19,9 @@ extern "C" {
 #endif
 
 extern const upb_MiniTable envoy__admin__v3__ServerInfo_msg_init;
+extern const upb_MiniTable* envoy__admin__v3__ServerInfo_msg_init_ptr;
 extern const upb_MiniTable envoy__admin__v3__CommandLineOptions_msg_init;
+extern const upb_MiniTable* envoy__admin__v3__CommandLineOptions_msg_init_ptr;
 
 extern const upb_MiniTableFile envoy_admin_v3_server_info_proto_upb_file_layout;
 

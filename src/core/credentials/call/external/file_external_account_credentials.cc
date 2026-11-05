@@ -55,14 +55,14 @@ void FileExternalAccountCredentials::FileFetchBody::ReadFile() {
   // request because it may have changed since the last request.
   auto content_slice = LoadFile(creds_->file_, /*add_null_terminator=*/false);
   if (!content_slice.ok()) {
-    Finish(absl::UnavailableError(content_slice.status().message()));
+    Finish(content_slice.status());
     return;
   }
   absl::string_view content = content_slice->as_string_view();
   if (creds_->format_type_ == "json") {
     auto content_json = JsonParse(content);
     if (!content_json.ok() || content_json->type() != Json::Type::kObject) {
-      Finish(absl::UnauthenticatedError(
+      Finish(GRPC_ERROR_CREATE(
           "The content of the file is not a valid json object."));
       return;
     }

@@ -37,8 +37,6 @@ class CallCredsConfig : public RefCounted<CallCredsConfig> {
  public:
   virtual absl::string_view type() const = 0;
 
-  virtual absl::string_view proto_type() const = 0;
-
   virtual bool Equals(const CallCredsConfig& other) const = 0;
 
   virtual std::string ToString() const = 0;
@@ -49,15 +47,11 @@ class CallCredsFactory final {
  public:
   virtual ~CallCredsFactory() {}
   virtual absl::string_view type() const = delete;
-  virtual RefCountedPtr<const CallCredsConfig> ParseConfig(
+  virtual RefCountedPtr<CallCredsConfig> ParseConfig(
       const Json& config, const JsonArgs& args,
       ValidationErrors* errors) const = delete;
-  virtual absl::string_view proto_type() const = delete;
-  virtual RefCountedPtr<const CallCredsConfig> ParseProto(
-      absl::string_view serialized_proto,
-      ValidationErrors* errors) const = delete;
   virtual RefCountedPtr<T> CreateCallCreds(
-      RefCountedPtr<const CallCredsConfig> config) const = delete;
+      RefCountedPtr<CallCredsConfig> config) const = delete;
 };
 
 template <>
@@ -65,21 +59,18 @@ class CallCredsFactory<grpc_call_credentials> {
  public:
   virtual ~CallCredsFactory() {}
   virtual absl::string_view type() const = 0;
-  virtual RefCountedPtr<const CallCredsConfig> ParseConfig(
+  virtual RefCountedPtr<CallCredsConfig> ParseConfig(
       const Json& config, const JsonArgs& args,
       ValidationErrors* errors) const = 0;
-  virtual absl::string_view proto_type() const = 0;
-  virtual RefCountedPtr<const CallCredsConfig> ParseProto(
-      absl::string_view serialized_proto, ValidationErrors* errors) const = 0;
   virtual RefCountedPtr<grpc_call_credentials> CreateCallCreds(
-      RefCountedPtr<const CallCredsConfig> config) const = 0;
+      RefCountedPtr<CallCredsConfig> config) const = 0;
 };
 
 template <typename T = grpc_call_credentials>
 class CallCredsRegistry {
  private:
   using FactoryMap =
-      std::map<absl::string_view, std::shared_ptr<CallCredsFactory<T>>>;
+      std::map<absl::string_view, std::unique_ptr<CallCredsFactory<T>>>;
 
  public:
   static_assert(std::is_base_of<grpc_call_credentials, T>::value,
@@ -90,63 +81,43 @@ class CallCredsRegistry {
    public:
     void RegisterCallCredsFactory(
         std::unique_ptr<CallCredsFactory<T>> factory) {
-      std::shared_ptr<CallCredsFactory<T>> shared_factory(std::move(factory));
-      absl::string_view type = shared_factory->type();
-      if (!type.empty()) name_map_[type] = shared_factory;
-      absl::string_view proto_type = shared_factory->proto_type();
-      if (!proto_type.empty()) proto_map_[proto_type] = shared_factory;
+      absl::string_view type = factory->type();
+      factories_[type] = std::move(factory);
     }
-
     CallCredsRegistry Build() {
-      return CallCredsRegistry<T>(std::move(name_map_), std::move(proto_map_));
+      return CallCredsRegistry<T>(std::move(factories_));
     }
 
    private:
-    FactoryMap name_map_;
-    FactoryMap proto_map_;
+    FactoryMap factories_;
   };
 
   bool IsSupported(absl::string_view type) const {
-    return name_map_.find(type) != name_map_.end();
+    return factories_.find(type) != factories_.end();
   }
 
-  RefCountedPtr<const CallCredsConfig> ParseConfig(
-      absl::string_view type, const Json& config, const JsonArgs& args,
-      ValidationErrors* errors) const {
-    const auto it = name_map_.find(type);
-    if (it == name_map_.cend()) return nullptr;
+  RefCountedPtr<CallCredsConfig> ParseConfig(absl::string_view type,
+                                             const Json& config,
+                                             const JsonArgs& args,
+                                             ValidationErrors* errors) const {
+    const auto it = factories_.find(type);
+    if (it == factories_.cend()) return nullptr;
     return it->second->ParseConfig(config, args, errors);
   }
 
-  bool IsProtoSupported(absl::string_view type) const {
-    return proto_map_.find(type) != proto_map_.end();
-  }
-
-  RefCountedPtr<const CallCredsConfig> ParseProto(
-      absl::string_view proto_type, absl::string_view serialized_proto,
-      ValidationErrors* errors) const {
-    const auto it = proto_map_.find(proto_type);
-    if (it == proto_map_.cend()) return nullptr;
-    return it->second->ParseProto(serialized_proto, errors);
-  }
-
   RefCountedPtr<T> CreateCallCreds(
-      RefCountedPtr<const CallCredsConfig> config) const {
+      RefCountedPtr<CallCredsConfig> config) const {
     if (config == nullptr) return nullptr;
-    auto it = name_map_.find(config->type());
-    if (it == name_map_.cend()) {
-      it = proto_map_.find(config->proto_type());
-      if (it == proto_map_.cend()) return nullptr;
-    }
+    const auto it = factories_.find(config->type());
+    if (it == factories_.cend()) return nullptr;
     return it->second->CreateCallCreds(std::move(config));
   }
 
  private:
-  CallCredsRegistry(FactoryMap name_map, FactoryMap proto_map)
-      : name_map_(std::move(name_map)), proto_map_(std::move(proto_map)) {}
+  explicit CallCredsRegistry(FactoryMap factories)
+      : factories_(std::move(factories)) {}
 
-  FactoryMap name_map_;
-  FactoryMap proto_map_;
+  FactoryMap factories_;
 };
 
 }  // namespace grpc_core

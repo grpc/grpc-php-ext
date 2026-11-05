@@ -216,16 +216,12 @@ Json ParseMetadataMatcherToJson(
 }
 
 Json ParsePermissionToJson(const envoy_config_rbac_v3_Permission* permission,
-                           size_t depth, ValidationErrors* errors) {
-  if (depth > 16) {
-    errors->AddError("exceeded max recursion depth");
-    return Json();
-  }
+                           ValidationErrors* errors) {
   Json::Object permission_json;
   // Helper function to parse Permission::Set to JSON. Used by `and_rules` and
   // `or_rules`.
   auto parse_permission_set_to_json =
-      [&](const envoy_config_rbac_v3_Permission_Set* set) -> Json {
+      [errors](const envoy_config_rbac_v3_Permission_Set* set) -> Json {
     Json::Array rules_json;
     size_t size;
     const envoy_config_rbac_v3_Permission* const* rules =
@@ -233,7 +229,7 @@ Json ParsePermissionToJson(const envoy_config_rbac_v3_Permission* permission,
     for (size_t i = 0; i < size; ++i) {
       ValidationErrors::ScopedField field(errors,
                                           absl::StrCat(".rules[", i, "]"));
-      Json permission_json = ParsePermissionToJson(rules[i], depth + 1, errors);
+      Json permission_json = ParsePermissionToJson(rules[i], errors);
       rules_json.emplace_back(std::move(permission_json));
     }
     return Json::FromObject(
@@ -280,8 +276,7 @@ Json ParsePermissionToJson(const envoy_config_rbac_v3_Permission* permission,
   } else if (envoy_config_rbac_v3_Permission_has_not_rule(permission)) {
     ValidationErrors::ScopedField field(errors, ".not_rule");
     Json not_rule_json = ParsePermissionToJson(
-        envoy_config_rbac_v3_Permission_not_rule(permission), depth + 1,
-        errors);
+        envoy_config_rbac_v3_Permission_not_rule(permission), errors);
     permission_json.emplace("notRule", std::move(not_rule_json));
   } else if (envoy_config_rbac_v3_Permission_has_requested_server_name(
                  permission)) {
@@ -298,16 +293,12 @@ Json ParsePermissionToJson(const envoy_config_rbac_v3_Permission* permission,
 }
 
 Json ParsePrincipalToJson(const envoy_config_rbac_v3_Principal* principal,
-                          size_t depth, ValidationErrors* errors) {
-  if (depth > 16) {
-    errors->AddError("exceeded max recursion depth");
-    return Json();
-  }
+                          ValidationErrors* errors) {
   Json::Object principal_json;
   // Helper function to parse Principal::Set to JSON. Used by `and_ids` and
   // `or_ids`.
   auto parse_principal_set_to_json =
-      [&](const envoy_config_rbac_v3_Principal_Set* set) -> Json {
+      [errors](const envoy_config_rbac_v3_Principal_Set* set) -> Json {
     Json::Array ids_json;
     size_t size;
     const envoy_config_rbac_v3_Principal* const* ids =
@@ -315,7 +306,7 @@ Json ParsePrincipalToJson(const envoy_config_rbac_v3_Principal* principal,
     for (size_t i = 0; i < size; ++i) {
       ValidationErrors::ScopedField field(errors,
                                           absl::StrCat(".ids[", i, "]"));
-      Json principal_json = ParsePrincipalToJson(ids[i], depth + 1, errors);
+      Json principal_json = ParsePrincipalToJson(ids[i], errors);
       ids_json.emplace_back(std::move(principal_json));
     }
     return Json::FromObject({{"ids", Json::FromArray(std::move(ids_json))}});
@@ -377,7 +368,7 @@ Json ParsePrincipalToJson(const envoy_config_rbac_v3_Principal* principal,
   } else if (envoy_config_rbac_v3_Principal_has_not_id(principal)) {
     ValidationErrors::ScopedField field(errors, ".not_id");
     Json not_id_json = ParsePrincipalToJson(
-        envoy_config_rbac_v3_Principal_not_id(principal), depth + 1, errors);
+        envoy_config_rbac_v3_Principal_not_id(principal), errors);
     principal_json.emplace("notId", std::move(not_id_json));
   } else {
     errors->AddError("invalid rule");
@@ -395,8 +386,7 @@ Json ParsePolicyToJson(const envoy_config_rbac_v3_Policy* policy,
   for (size_t i = 0; i < size; ++i) {
     ValidationErrors::ScopedField field(errors,
                                         absl::StrCat(".permissions[", i, "]"));
-    Json permission_json =
-        ParsePermissionToJson(permissions[i], /*depth=*/0, errors);
+    Json permission_json = ParsePermissionToJson(permissions[i], errors);
     permissions_json.emplace_back(std::move(permission_json));
   }
   policy_json.emplace("permissions",
@@ -407,8 +397,7 @@ Json ParsePolicyToJson(const envoy_config_rbac_v3_Policy* policy,
   for (size_t i = 0; i < size; ++i) {
     ValidationErrors::ScopedField field(errors,
                                         absl::StrCat(".principals[", i, "]"));
-    Json principal_json =
-        ParsePrincipalToJson(principals[i], /*depth=*/0, errors);
+    Json principal_json = ParsePrincipalToJson(principals[i], errors);
     principals_json.emplace_back(std::move(principal_json));
   }
   policy_json.emplace("principals",
@@ -527,11 +516,12 @@ void XdsHttpRbacFilter::PopulateSymtab(upb_DefPool* symtab) const {
   envoy_extensions_filters_http_rbac_v3_RBAC_getmsgdef(symtab);
 }
 
-std::optional<Json> XdsHttpRbacFilter::GenerateFilterConfig(
+std::optional<XdsHttpFilterImpl::FilterConfig>
+XdsHttpRbacFilter::GenerateFilterConfig(
     absl::string_view /*instance_name*/,
-    const XdsResourceType::DecodeContext& context,
-    const XdsExtension& extension, ValidationErrors* errors) const {
-  const absl::string_view* serialized_filter_config =
+    const XdsResourceType::DecodeContext& context, XdsExtension extension,
+    ValidationErrors* errors) const {
+  absl::string_view* serialized_filter_config =
       std::get_if<absl::string_view>(&extension.value);
   if (serialized_filter_config == nullptr) {
     errors->AddError("could not parse HTTP RBAC filter config");
@@ -544,14 +534,16 @@ std::optional<Json> XdsHttpRbacFilter::GenerateFilterConfig(
     errors->AddError("could not parse HTTP RBAC filter config");
     return std::nullopt;
   }
-  return ParseHttpRbacToJson(context, rbac, errors);
+  return FilterConfig{ConfigProtoName(),
+                      ParseHttpRbacToJson(context, rbac, errors)};
 }
 
-std::optional<Json> XdsHttpRbacFilter::GenerateFilterConfigOverride(
+std::optional<XdsHttpFilterImpl::FilterConfig>
+XdsHttpRbacFilter::GenerateFilterConfigOverride(
     absl::string_view /*instance_name*/,
-    const XdsResourceType::DecodeContext& context,
-    const XdsExtension& extension, ValidationErrors* errors) const {
-  const absl::string_view* serialized_filter_config =
+    const XdsResourceType::DecodeContext& context, XdsExtension extension,
+    ValidationErrors* errors) const {
+  absl::string_view* serialized_filter_config =
       std::get_if<absl::string_view>(&extension.value);
   if (serialized_filter_config == nullptr) {
     errors->AddError("could not parse RBACPerRoute");
@@ -574,13 +566,11 @@ std::optional<Json> XdsHttpRbacFilter::GenerateFilterConfigOverride(
     ValidationErrors::ScopedField field(errors, ".rbac");
     rbac_json = ParseHttpRbacToJson(context, rbac, errors);
   }
-  return rbac_json;
+  return FilterConfig{OverrideConfigProtoName(), std::move(rbac_json)};
 }
 
-void XdsHttpRbacFilter::AddFilter(
-    FilterChainBuilder& builder,
-    RefCountedPtr<const FilterConfig> config) const {
-  builder.AddFilter<RbacFilter>(std::move(config));
+void XdsHttpRbacFilter::AddFilter(InterceptionChainBuilder& builder) const {
+  builder.Add<RbacFilter>(nullptr);
 }
 
 const grpc_channel_filter* XdsHttpRbacFilter::channel_filter() const {
@@ -594,36 +584,19 @@ ChannelArgs XdsHttpRbacFilter::ModifyChannelArgs(
 
 absl::StatusOr<XdsHttpFilterImpl::ServiceConfigJsonEntry>
 XdsHttpRbacFilter::GenerateMethodConfig(
-    const Json& hcm_filter_config, const Json* filter_config_override) const {
+    const FilterConfig& hcm_filter_config,
+    const FilterConfig* filter_config_override) const {
   const Json& policy_json = filter_config_override != nullptr
-                                ? *filter_config_override
-                                : hcm_filter_config;
+                                ? filter_config_override->config
+                                : hcm_filter_config.config;
   // The policy JSON may be empty and that's allowed.
   return ServiceConfigJsonEntry{"rbacPolicy", JsonDump(policy_json)};
 }
 
 absl::StatusOr<XdsHttpFilterImpl::ServiceConfigJsonEntry>
 XdsHttpRbacFilter::GenerateServiceConfig(
-    const Json& /*hcm_filter_config*/) const {
+    const FilterConfig& /*hcm_filter_config*/) const {
   return ServiceConfigJsonEntry{"", ""};
-}
-
-RefCountedPtr<const FilterConfig> XdsHttpRbacFilter::ParseTopLevelConfig(
-    absl::string_view /*instance_name*/,
-    const XdsResourceType::DecodeContext& /*context*/,
-    const XdsExtension& /*extension*/, ValidationErrors* /*errors*/) const {
-  // TODO(roth): Implement this as part of migrating the server side to
-  // the new approach for passing xDS HTTP filter configs.
-  return nullptr;
-}
-
-RefCountedPtr<const FilterConfig> XdsHttpRbacFilter::ParseOverrideConfig(
-    absl::string_view /*instance_name*/,
-    const XdsResourceType::DecodeContext& /*context*/,
-    const XdsExtension& /*extension*/, ValidationErrors* /*errors*/) const {
-  // TODO(roth): Implement this as part of migrating the server side to
-  // the new approach for passing xDS HTTP filter configs.
-  return nullptr;
 }
 
 }  // namespace grpc_core

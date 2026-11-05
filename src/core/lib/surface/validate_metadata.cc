@@ -42,17 +42,6 @@ class LegalHeaderKeyBits : public BitSet<256> {
 };
 constexpr LegalHeaderKeyBits g_legal_header_key_bits;
 
-class LegalHeaderNonBinValueBits : public BitSet<256> {
- public:
-  constexpr LegalHeaderNonBinValueBits() {
-    for (int i = 32; i <= 126; i++) {
-      set(i);
-    }
-  }
-};
-
-constexpr LegalHeaderNonBinValueBits g_legal_header_non_bin_value_bits;
-
 ValidateMetadataResult ConformsTo(absl::string_view x,
                                   const BitSet<256>& legal_bits,
                                   ValidateMetadataResult error) {
@@ -80,12 +69,6 @@ ValidateMetadataResult ValidateHeaderKeyIsLegal(absl::string_view key) {
   }
   return ConformsTo(key, g_legal_header_key_bits,
                     ValidateMetadataResult::kIllegalHeaderKey);
-}
-
-ValidateMetadataResult ValidateNonBinaryHeaderValueIsLegal(
-    absl::string_view value) {
-  return ConformsTo(value, g_legal_header_non_bin_value_bits,
-                    ValidateMetadataResult::kIllegalHeaderValue);
 }
 
 const char* ValidateMetadataResultToString(ValidateMetadataResult result) {
@@ -120,11 +103,23 @@ int grpc_header_key_is_legal(grpc_slice slice) {
   return error2int(grpc_validate_header_key_is_legal(slice));
 }
 
+namespace {
+class LegalHeaderNonBinValueBits : public grpc_core::BitSet<256> {
+ public:
+  constexpr LegalHeaderNonBinValueBits() {
+    for (int i = 32; i <= 126; i++) {
+      set(i);
+    }
+  }
+};
+constexpr LegalHeaderNonBinValueBits g_legal_header_non_bin_value_bits;
+}  // namespace
+
 grpc_error_handle grpc_validate_header_nonbin_value_is_legal(
     const grpc_slice& slice) {
-  return grpc_core::UpgradeToStatus(
-      grpc_core::ValidateNonBinaryHeaderValueIsLegal(
-          grpc_core::StringViewFromSlice(slice)));
+  return grpc_core::UpgradeToStatus(grpc_core::ConformsTo(
+      grpc_core::StringViewFromSlice(slice), g_legal_header_non_bin_value_bits,
+      grpc_core::ValidateMetadataResult::kIllegalHeaderValue));
 }
 
 int grpc_header_nonbin_value_is_legal(grpc_slice slice) {

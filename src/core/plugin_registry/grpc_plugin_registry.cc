@@ -21,7 +21,7 @@
 
 #include "src/core/config/core_configuration.h"
 #include "src/core/handshaker/endpoint_info/endpoint_info_handshaker.h"
-#include "src/core/handshaker/http_connect/http_connect_client_handshaker.h"
+#include "src/core/handshaker/http_connect/http_connect_handshaker.h"
 #include "src/core/handshaker/tcp_connect/tcp_connect_handshaker.h"
 #include "src/core/lib/surface/channel_stack_type.h"
 #include "src/core/lib/surface/lame_client.h"
@@ -41,7 +41,6 @@ extern void BuildClientChannelConfiguration(
     CoreConfiguration::Builder* builder);
 extern void SecurityRegisterHandshakerFactories(
     CoreConfiguration::Builder* builder);
-extern void RegisterAuthComparators(CoreConfiguration::Builder* builder);
 extern void RegisterClientAuthorityFilter(CoreConfiguration::Builder* builder);
 extern void RegisterLegacyChannelIdleFilters(
     CoreConfiguration::Builder* builder);
@@ -53,6 +52,7 @@ extern void RegisterServiceConfigChannelArgFilter(
     CoreConfiguration::Builder* builder);
 extern void RegisterExtraFilters(CoreConfiguration::Builder* builder);
 extern void RegisterResourceQuota(CoreConfiguration::Builder* builder);
+extern void FaultInjectionFilterRegister(CoreConfiguration::Builder* builder);
 extern void RegisterDnsResolver(CoreConfiguration::Builder* builder);
 extern void RegisterBackendMetricFilter(CoreConfiguration::Builder* builder);
 extern void RegisterSockaddrResolver(CoreConfiguration::Builder* builder);
@@ -87,10 +87,6 @@ void RegisterBuiltins(CoreConfiguration::Builder* builder) {
       ->RegisterFilter(GRPC_SERVER_CHANNEL, &Server::kServerTopFilter)
       .SkipV3()
       .BeforeAll();
-  builder->channel_init()
-      ->RegisterFilter(GRPC_SERVER_VIRTUAL_CHANNEL, &Server::kServerTopFilter)
-      .SkipV3()
-      .BeforeAll();
 }
 
 }  // namespace
@@ -102,7 +98,7 @@ void BuildCoreConfiguration(CoreConfiguration::Builder* builder) {
   // We want TCP connect handshaker to be registered last so that it is added
   // to the start of the handshaker list.
   RegisterEndpointInfoHandshaker(builder);
-  RegisterHttpConnectClientHandshaker(builder);
+  RegisterHttpConnectHandshaker(builder);
   RegisterTCPConnectHandshaker(builder);
   RegisterChttp2Transport(builder);
 #ifndef GRPC_MINIMAL_LB_POLICY
@@ -126,6 +122,7 @@ void BuildCoreConfiguration(CoreConfiguration::Builder* builder) {
   RegisterMessageSizeFilter(builder);
   RegisterServiceConfigChannelArgFilter(builder);
   RegisterResourceQuota(builder);
+  FaultInjectionFilterRegister(builder);
   RegisterDnsResolver(builder);
   RegisterSockaddrResolver(builder);
   RegisterFakeResolver(builder);

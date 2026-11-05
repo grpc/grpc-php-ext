@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-#include "src/core/filter/filter_chain.h"
+#include "src/core/filter/blackboard.h"
 #include "src/core/lib/channel/channel_args.h"
 #include "src/core/lib/channel/channel_fwd.h"
 #include "src/core/lib/channel/channel_stack.h"
@@ -41,13 +41,13 @@
 
 namespace grpc_core {
 
-class DynamicFilters final : public FilterChain {
+class DynamicFilters final : public RefCounted<DynamicFilters> {
  public:
   // Implements the interface of RefCounted<>.
   class Call {
    public:
     struct Args {
-      RefCountedPtr<const DynamicFilters> channel_stack;
+      RefCountedPtr<DynamicFilters> channel_stack;
       grpc_polling_entity* pollent;
       gpr_cycle_counter start_time;
       Timestamp deadline;
@@ -84,18 +84,18 @@ class DynamicFilters final : public FilterChain {
 
     static void Destroy(void* arg, grpc_error_handle error);
 
-    RefCountedPtr<const DynamicFilters> channel_stack_;
+    RefCountedPtr<DynamicFilters> channel_stack_;
     grpc_closure* after_call_stack_destroy_ = nullptr;
   };
 
   static RefCountedPtr<DynamicFilters> Create(
-      const ChannelArgs& args, std::vector<FilterAndConfig> filters);
+      const ChannelArgs& args, std::vector<const grpc_channel_filter*> filters,
+      const Blackboard* blackboard);
 
   explicit DynamicFilters(RefCountedPtr<grpc_channel_stack> channel_stack)
       : channel_stack_(std::move(channel_stack)) {}
 
-  RefCountedPtr<Call> CreateCall(Call::Args args,
-                                 grpc_error_handle* error) const;
+  RefCountedPtr<Call> CreateCall(Call::Args args, grpc_error_handle* error);
 
   grpc_channel_stack* channel_stack() const { return channel_stack_.get(); }
 

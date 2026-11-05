@@ -41,6 +41,7 @@ const char* grpc_status_code_to_string(grpc_status_code status);
 bool grpc_status_code_from_int(int status_int, grpc_status_code* status);
 
 namespace grpc_core {
+namespace internal {
 
 /// A set of grpc_status_code values.
 class StatusCodeSet {
@@ -65,6 +66,8 @@ class StatusCodeSet {
  private:
   int status_code_mask_ = 0;  // A bitfield of status codes in the set.
 };
+
+}  // namespace internal
 
 // Optionally rewrites a status as per
 // https://github.com/grpc/proposal/blob/master/A54-restrict-control-plane-status-codes.md.

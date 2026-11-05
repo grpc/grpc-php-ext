@@ -55,11 +55,7 @@ class TokenFetcherCredentials : public grpc_call_credentials {
     Timestamp ExpirationTime() const { return expiration_; }
 
     // Adds the token to the call's client initial metadata.
-    virtual void AddTokenToClientInitialMetadata(ClientMetadata& metadata);
-
-   protected:
-    // Returns the token's value.
-    const Slice& token() const { return token_; }
+    void AddTokenToClientInitialMetadata(ClientMetadata& metadata) const;
 
    private:
     Slice token_;
@@ -70,8 +66,6 @@ class TokenFetcherCredentials : public grpc_call_credentials {
 
   void Orphaned() override;
 
-  // TODO(roth): Change internal code to not override this method and then
-  // change it to 'final'.
   ArenaPromise<absl::StatusOr<ClientMetadataHandle>> GetRequestMetadata(
       ClientMetadataHandle initial_metadata,
       const GetRequestMetadataArgs* args) override;

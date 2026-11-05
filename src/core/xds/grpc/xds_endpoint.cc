@@ -16,26 +16,21 @@
 
 #include "src/core/xds/grpc/xds_endpoint.h"
 
-#include <string>
+#include <vector>
 
-#include "src/core/util/string.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 
 namespace grpc_core {
 
 std::string XdsEndpointResource::Priority::Locality::ToString() const {
-  std::string result = "{name=";
-  StrAppend(result, name->human_readable_string().as_string_view());
-  StrAppend(result, ", lb_weight=");
-  StrAppend(result, std::to_string(lb_weight));
-  StrAppend(result, ", endpoints=[");
-  bool is_first = true;
+  std::vector<std::string> endpoint_strings;
   for (const EndpointAddresses& endpoint : endpoints) {
-    if (!is_first) StrAppend(result, ", ");
-    StrAppend(result, endpoint.ToString());
-    is_first = false;
+    endpoint_strings.emplace_back(endpoint.ToString());
   }
-  StrAppend(result, "]}");
-  return result;
+  return absl::StrCat("{name=", name->human_readable_string().as_string_view(),
+                      ", lb_weight=", lb_weight, ", endpoints=[",
+                      absl::StrJoin(endpoint_strings, ", "), "]}");
 }
 
 bool XdsEndpointResource::Priority::operator==(const Priority& other) const {
@@ -52,15 +47,12 @@ bool XdsEndpointResource::Priority::operator==(const Priority& other) const {
 }
 
 std::string XdsEndpointResource::Priority::ToString() const {
-  std::string result = "[";
-  bool is_first = true;
+  std::vector<std::string> locality_strings;
+  locality_strings.reserve(localities.size());
   for (const auto& [_, locality] : localities) {
-    if (!is_first) StrAppend(result, ", ");
-    StrAppend(result, locality.ToString());
-    is_first = false;
+    locality_strings.emplace_back(locality.ToString());
   }
-  StrAppend(result, "]");
-  return result;
+  return absl::StrCat("[", absl::StrJoin(locality_strings, ", "), "]");
 }
 
 bool XdsEndpointResource::DropConfig::ShouldDrop(
@@ -80,37 +72,25 @@ bool XdsEndpointResource::DropConfig::ShouldDrop(
 }
 
 std::string XdsEndpointResource::DropConfig::ToString() const {
-  std::string result = "{[";
-  bool is_first = true;
+  std::vector<std::string> category_strings;
   for (const DropCategory& category : drop_category_list_) {
-    if (!is_first) StrAppend(result, ", ");
-    StrAppend(result, category.name);
-    StrAppend(result, "=");
-    StrAppend(result, std::to_string(category.parts_per_million));
-    is_first = false;
+    category_strings.emplace_back(
+        absl::StrCat(category.name, "=", category.parts_per_million));
   }
-  StrAppend(result, "], drop_all=");
-  StrAppend(result, drop_all_ ? "true" : "false");
-  StrAppend(result, "}");
-  return result;
+  return absl::StrCat("{[", absl::StrJoin(category_strings, ", "),
+                      "], drop_all=", drop_all_, "}");
 }
 
 std::string XdsEndpointResource::ToString() const {
-  std::string result = "{priorities=[";
+  std::vector<std::string> priority_strings;
   for (size_t i = 0; i < priorities.size(); ++i) {
-    if (i > 0) StrAppend(result, ", ");
-    StrAppend(result, "priority ");
-    StrAppend(result, std::to_string(i));
-    StrAppend(result, ": ");
-    StrAppend(result, priorities[i].ToString());
+    const Priority& priority = priorities[i];
+    priority_strings.emplace_back(
+        absl::StrCat("priority ", i, ": ", priority.ToString()));
   }
-  StrAppend(result, "]");
-  if (drop_config != nullptr) {
-    StrAppend(result, ", drop_config=");
-    StrAppend(result, drop_config->ToString());
-  }
-  StrAppend(result, "}");
-  return result;
+  return absl::StrCat(
+      "priorities=[", absl::StrJoin(priority_strings, ", "), "], drop_config=",
+      drop_config == nullptr ? "<null>" : drop_config->ToString());
 }
 
 }  // namespace grpc_core

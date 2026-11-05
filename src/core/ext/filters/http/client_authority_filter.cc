@@ -77,10 +77,6 @@ void RegisterClientAuthorityFilter(CoreConfiguration::Builder* builder) {
       ->RegisterFilter<ClientAuthorityFilter>(GRPC_CLIENT_DIRECT_CHANNEL)
       .If(NeedsClientAuthorityFilter)
       .Before<ClientAuthFilter>();
-  builder->channel_init()
-      ->RegisterFilter<ClientAuthorityFilter>(GRPC_CLIENT_VIRTUAL_CHANNEL)
-      .If(NeedsClientAuthorityFilter)
-      .Before<ClientAuthFilter>();
 }
 
 }  // namespace grpc_core

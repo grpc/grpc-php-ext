@@ -18,7 +18,9 @@
 
 #include "src/core/lib/address_utils/sockaddr_utils.h"
 #include "src/core/util/match.h"
-#include "src/core/util/string.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
 
 namespace grpc_core {
 
@@ -27,31 +29,27 @@ namespace grpc_core {
 //
 
 std::string XdsListenerResource::HttpConnectionManager::ToString() const {
-  std::string result = "{";
-  Match(
+  std::vector<std::string> contents;
+  contents.push_back(Match(
       route_config,
-      [&](const std::string& rds_name) {
-        StrAppend(result, "rds_name=");
-        StrAppend(result, rds_name);
+      [](const std::string& rds_name) {
+        return absl::StrCat("rds_name=", rds_name);
       },
-      [&](const std::shared_ptr<const XdsRouteConfigResource>& route_config) {
-        StrAppend(result, "route_config=");
-        StrAppend(result, route_config->ToString());
-      });
-  StrAppend(result, ", http_max_stream_duration=");
-  StrAppend(result, http_max_stream_duration.ToString());
+      [](const std::shared_ptr<const XdsRouteConfigResource>& route_config) {
+        return absl::StrCat("route_config=", route_config->ToString());
+      }));
+  contents.push_back(absl::StrCat("http_max_stream_duration=",
+                                  http_max_stream_duration.ToString()));
   if (!http_filters.empty()) {
-    StrAppend(result, ", http_filters=[");
-    bool is_first = true;
+    std::vector<std::string> filter_strings;
+    filter_strings.reserve(http_filters.size());
     for (const auto& http_filter : http_filters) {
-      if (!is_first) StrAppend(result, ", ");
-      StrAppend(result, http_filter.ToString());
-      is_first = false;
+      filter_strings.push_back(http_filter.ToString());
     }
-    StrAppend(result, "]");
+    contents.push_back(absl::StrCat("http_filters=[",
+                                    absl::StrJoin(filter_strings, ", "), "]"));
   }
-  StrAppend(result, "}");
-  return result;
+  return absl::StrCat("{", absl::StrJoin(contents, ", "), "}");
 }
 
 //
@@ -60,17 +58,7 @@ std::string XdsListenerResource::HttpConnectionManager::ToString() const {
 
 std::string XdsListenerResource::HttpConnectionManager::HttpFilter::ToString()
     const {
-  std::string result = "{name=";
-  StrAppend(result, name);
-  StrAppend(result, ", config_proto_type=");
-  StrAppend(result, config_proto_type);
-  StrAppend(result, ", config=");
-  StrAppend(result, JsonDump(config));
-  StrAppend(result, ", filter_config=");
-  StrAppend(result,
-            filter_config == nullptr ? "null" : filter_config->ToString());
-  StrAppend(result, "}");
-  return result;
+  return absl::StrCat("{name=", name, ", config=", config.ToString(), "}");
 }
 
 //
@@ -78,11 +66,9 @@ std::string XdsListenerResource::HttpConnectionManager::HttpFilter::ToString()
 //
 
 std::string XdsListenerResource::DownstreamTlsContext::ToString() const {
-  std::string result = "{common_tls_context=";
-  StrAppend(result, common_tls_context.ToString());
-  StrAppend(result, ", require_client_certificate=");
-  StrAppend(result, require_client_certificate ? "true}" : "false}");
-  return result;
+  return absl::StrFormat("common_tls_context=%s, require_client_certificate=%s",
+                         common_tls_context.ToString(),
+                         require_client_certificate ? "true" : "false");
 }
 
 bool XdsListenerResource::DownstreamTlsContext::Empty() const {
@@ -94,12 +80,9 @@ bool XdsListenerResource::DownstreamTlsContext::Empty() const {
 //
 
 std::string XdsListenerResource::FilterChainData::ToString() const {
-  std::string result = "{downstream_tls_context=";
-  StrAppend(result, downstream_tls_context.ToString());
-  StrAppend(result, " http_connection_manager=");
-  StrAppend(result, http_connection_manager.ToString());
-  StrAppend(result, "}");
-  return result;
+  return absl::StrCat(
+      "{downstream_tls_context=", downstream_tls_context.ToString(),
+      " http_connection_manager=", http_connection_manager.ToString(), "}");
 }
 
 //
@@ -107,14 +90,11 @@ std::string XdsListenerResource::FilterChainData::ToString() const {
 //
 
 std::string XdsListenerResource::FilterChainMap::CidrRange::ToString() const {
-  std::string result = "{address_prefix=";
   auto addr_str = grpc_sockaddr_to_string(&address, false);
-  StrAppend(result,
-            addr_str.ok() ? addr_str.value() : addr_str.status().ToString());
-  StrAppend(result, ", prefix_len=");
-  StrAppend(result, std::to_string(prefix_len));
-  StrAppend(result, "}");
-  return result;
+  return absl::StrCat(
+      "{address_prefix=",
+      addr_str.ok() ? addr_str.value() : addr_str.status().ToString(),
+      ", prefix_len=", prefix_len, "}");
 }
 
 //
@@ -122,57 +102,41 @@ std::string XdsListenerResource::FilterChainMap::CidrRange::ToString() const {
 //
 
 std::string XdsListenerResource::FilterChainMap::ToString() const {
-  std::string result = "{";
-  bool is_first = true;
+  std::vector<std::string> contents;
   for (const auto& destination_ip : destination_ip_vector) {
     for (int source_type = 0; source_type < 3; ++source_type) {
       for (const auto& source_ip :
            destination_ip.source_types_array[source_type]) {
         for (const auto& [port, filter_chain] : source_ip.ports_map) {
-          if (!is_first) StrAppend(result, ", ");
-          StrAppend(result, "{filter_chain_match={");
-          bool match_is_first = true;
+          std::vector<std::string> match_contents;
           if (destination_ip.prefix_range.has_value()) {
-            StrAppend(result, "prefix_ranges={");
-            StrAppend(result, destination_ip.prefix_range->ToString());
-            StrAppend(result, "}");
-            match_is_first = false;
+            match_contents.push_back(
+                absl::StrCat("prefix_ranges={",
+                             destination_ip.prefix_range->ToString(), "}"));
           }
           if (static_cast<ConnectionSourceType>(source_type) ==
               ConnectionSourceType::kSameIpOrLoopback) {
-            if (!match_is_first) StrAppend(result, ", ");
-            StrAppend(result, "source_type=SAME_IP_OR_LOOPBACK");
-            match_is_first = false;
+            match_contents.push_back("source_type=SAME_IP_OR_LOOPBACK");
           } else if (static_cast<ConnectionSourceType>(source_type) ==
                      ConnectionSourceType::kExternal) {
-            if (!match_is_first) StrAppend(result, ", ");
-            StrAppend(result, "source_type=EXTERNAL");
-            match_is_first = false;
+            match_contents.push_back("source_type=EXTERNAL");
           }
           if (source_ip.prefix_range.has_value()) {
-            if (!match_is_first) StrAppend(result, ", ");
-            StrAppend(result, "source_prefix_ranges={");
-            StrAppend(result, source_ip.prefix_range->ToString());
-            StrAppend(result, "}");
-            match_is_first = false;
+            match_contents.push_back(
+                absl::StrCat("source_prefix_ranges={",
+                             source_ip.prefix_range->ToString(), "}"));
           }
           if (port != 0) {
-            if (!match_is_first) StrAppend(result, ", ");
-            StrAppend(result, "source_ports={");
-            StrAppend(result, std::to_string(port));
-            StrAppend(result, "}");
-            match_is_first = false;
+            match_contents.push_back(absl::StrCat("source_ports={", port, "}"));
           }
-          StrAppend(result, "}, filter_chain=");
-          StrAppend(result, filter_chain.data->ToString());
-          StrAppend(result, "}");
-          is_first = false;
+          contents.push_back(absl::StrCat(
+              "{filter_chain_match={", absl::StrJoin(match_contents, ", "),
+              "}, filter_chain=", filter_chain.data->ToString(), "}"));
         }
       }
     }
   }
-  StrAppend(result, "}");
-  return result;
+  return absl::StrCat("{", absl::StrJoin(contents, ", "), "}");
 }
 
 //
@@ -180,16 +144,15 @@ std::string XdsListenerResource::FilterChainMap::ToString() const {
 //
 
 std::string XdsListenerResource::TcpListener::ToString() const {
-  std::string result = "{address=";
-  StrAppend(result, address);
-  StrAppend(result, ", filter_chain_map=");
-  StrAppend(result, filter_chain_map.ToString());
+  std::vector<std::string> contents;
+  contents.push_back(absl::StrCat("address=", address));
+  contents.push_back(
+      absl::StrCat("filter_chain_map=", filter_chain_map.ToString()));
   if (default_filter_chain.has_value()) {
-    StrAppend(result, ", default_filter_chain=");
-    StrAppend(result, default_filter_chain->ToString());
+    contents.push_back(absl::StrCat("default_filter_chain=",
+                                    default_filter_chain->ToString()));
   }
-  StrAppend(result, "}");
-  return result;
+  return absl::StrCat("{", absl::StrJoin(contents, ", "), "}");
 }
 
 //
@@ -197,19 +160,14 @@ std::string XdsListenerResource::TcpListener::ToString() const {
 //
 
 std::string XdsListenerResource::ToString() const {
-  std::string result = "{";
-  Match(
+  return Match(
       listener,
-      [&](const HttpConnectionManager& hcm) {
-        StrAppend(result, "http_connection_manager=");
-        StrAppend(result, hcm.ToString());
+      [](const HttpConnectionManager& hcm) {
+        return absl::StrCat("{http_connection_manager=", hcm.ToString(), "}");
       },
-      [&](const TcpListener& tcp) {
-        StrAppend(result, "tcp_listener=");
-        StrAppend(result, tcp.ToString());
+      [](const TcpListener& tcp) {
+        return absl::StrCat("{tcp_listener=", tcp.ToString(), "}");
       });
-  StrAppend(result, "}");
-  return result;
 }
 
 }  // namespace grpc_core

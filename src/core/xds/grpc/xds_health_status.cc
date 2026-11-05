@@ -19,7 +19,8 @@
 #include <string>
 
 #include "envoy/config/core/v3/health_check.upb.h"
-#include "src/core/util/string.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 
 namespace grpc_core {
 
@@ -58,20 +59,15 @@ const char* XdsHealthStatus::ToString() const {
 }
 
 std::string XdsHealthStatusSet::ToString() const {
-  std::string result = "{";
-  bool is_first = true;
+  std::vector<const char*> set;
+  set.reserve(3);
   for (const auto& status :
        {XdsHealthStatus::kUnknown, XdsHealthStatus::kHealthy,
         XdsHealthStatus::kDraining}) {
     const XdsHealthStatus health_status(status);
-    if (Contains(health_status)) {
-      if (!is_first) StrAppend(result, ", ");
-      StrAppend(result, health_status.ToString());
-      is_first = false;
-    }
+    if (Contains(health_status)) set.push_back(health_status.ToString());
   }
-  StrAppend(result, "}");
-  return result;
+  return absl::StrCat("{", absl::StrJoin(set, ", "), "}");
 }
 
 }  // namespace grpc_core

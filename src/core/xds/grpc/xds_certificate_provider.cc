@@ -29,8 +29,6 @@
 #include "src/core/util/grpc_check.h"
 #include "absl/functional/bind_front.h"
 
-using tsi::RootCertInfo;
-
 namespace grpc_core {
 
 namespace {
@@ -110,8 +108,7 @@ XdsCertificateProvider::XdsCertificateProvider(
     absl::string_view root_cert_name, bool use_system_root_certs,
     RefCountedPtr<grpc_tls_certificate_provider> identity_cert_provider,
     absl::string_view identity_cert_name,
-    std::vector<StringMatcher> san_matchers, std::string sni,
-    bool auto_host_sni, bool auto_sni_san_validation)
+    std::vector<StringMatcher> san_matchers)
     : distributor_(MakeRefCounted<grpc_tls_certificate_distributor>()),
       root_cert_provider_(std::move(root_cert_provider)),
       root_cert_name_(root_cert_name),
@@ -119,9 +116,7 @@ XdsCertificateProvider::XdsCertificateProvider(
       identity_cert_provider_(std::move(identity_cert_provider)),
       identity_cert_name_(identity_cert_name),
       san_matchers_(std::move(san_matchers)),
-      sni_(std::move(sni)),
-      auto_host_sni_(auto_host_sni),
-      auto_sni_san_validation_(auto_sni_san_validation) {
+      require_client_certificate_(false) {
   distributor_->SetWatchStatusCallback(
       absl::bind_front(&XdsCertificateProvider::WatchStatusCallback, this));
 }

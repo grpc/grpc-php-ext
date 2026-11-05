@@ -27,7 +27,7 @@ class ResolverSupportsBlockingLookups {
   virtual ~ResolverSupportsBlockingLookups() = default;
 
   static constexpr absl::string_view EndpointExtensionName() {
-    return "io.grpc.event_engine.extension.resolver_supports_blocking_lookups";
+    return "io.grpc.event_engine.extension.can_track_errors";
   }
 
   virtual absl::StatusOr<std::vector<EventEngine::ResolvedAddress>>

@@ -29,7 +29,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <utility>
 
 #include "src/core/lib/debug/trace.h"
 #include "src/core/lib/event_engine/posix_engine/event_poller.h"
@@ -45,6 +44,7 @@
 #include "src/core/util/load_file.h"
 #include "src/core/util/ref_counted_ptr.h"
 #include "src/core/util/status_helper.h"
+#include "src/core/util/strerror.h"
 #include "src/core/util/sync.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/log/log.h"
@@ -136,11 +136,10 @@ uint64_t ParseUlimitMemLockFromFile(std::string file_name) {
     return 0;
   }
   // Find position of next newline after prefix.
-  size_t end = file_contents.find('\n', start);
+  size_t end = file_contents.find(start, '\n');
   // Extract substring between prefix and next newline.
-  size_t value_start = start + kHardMemlockPrefix.length() + 1;
   auto memlock_value_string = file_contents.substr(
-      value_start, end == std::string::npos ? end : end - value_start);
+      start + kHardMemlockPrefix.length() + 1, end - start);
   rtrim(memlock_value_string);
   if (memlock_value_string == "unlimited" ||
       memlock_value_string == "infinity") {
@@ -371,8 +370,8 @@ bool PosixEndpointImpl::TcpDoRead(absl::Status& status) {
       } else if (read_bytes == 0) {
         status = TcpAnnotateError(absl::InternalError("Socket closed"));
       } else {
-        status = TcpAnnotateError(
-            absl::InternalError(absl::StrCat("recvmsg:", res.StrError())));
+        status = TcpAnnotateError(absl::InternalError(
+            absl::StrCat("recvmsg:", grpc_core::StrError(errno))));
       }
       return true;
     }
@@ -893,7 +892,7 @@ bool PosixEndpointImpl::WriteWithTimestamps(struct msghdr* msg,
   traced_buffers_.AddNewEntry(
       static_cast<uint32_t>(bytes_counter_ + sending_length),
       &poller_->posix_interface(), handle_->WrappedFd(),
-      std::move(*outgoing_buffer_write_event_sink_));
+      std::move(outgoing_buffer_write_event_sink_).value());
   outgoing_buffer_write_event_sink_.reset();
 
   // If there was an error on sendmsg the logic in tcp_flush will handle it.
@@ -941,7 +940,6 @@ void PosixEndpointImpl::UnrefMaybePutZerocopySendRecord(
 void PosixEndpointImpl::TcpShutdownTracedBufferList() {
   if (outgoing_buffer_write_event_sink_.has_value()) {
     traced_buffers_.Shutdown(std::move(outgoing_buffer_write_event_sink_));
-    outgoing_buffer_write_event_sink_.reset();
   }
 }
 
@@ -1136,7 +1134,6 @@ bool PosixEndpointImpl::TcpFlush(absl::Status& status) {
     }
 
     GRPC_CHECK_EQ(outgoing_byte_idx_, 0u);
-    GRPC_CHECK_LE((static_cast<size_t>(*send_result)), sending_length);
     bytes_counter_ += *send_result;
     trailing = sending_length - static_cast<size_t>(*send_result);
     while (trailing > 0) {
@@ -1273,7 +1270,7 @@ void PosixEndpointImpl::MaybeShutdown(
   Unref();
 }
 
-PosixEndpointImpl::~PosixEndpointImpl() {
+PosixEndpointImpl ::~PosixEndpointImpl() {
   FileDescriptor release_fd;
   handle_->OrphanHandle(on_done_,
                         on_release_fd_ == nullptr ? nullptr : &release_fd, "");
@@ -1330,7 +1327,7 @@ PosixEndpointImpl::PosixEndpointImpl(EventHandle* handle,
                  << "ulimit value is not set. Use ulimit -l <value> to set its "
                  << "value.";
     } else {
-      if (!posix_interface.SetSockOpt(fd, SOL_SOCKET, SO_ZEROCOPY, 1).ok()) {
+      if (posix_interface.SetSockOpt(fd, SOL_SOCKET, SO_ZEROCOPY, 1).ok()) {
         zerocopy_enabled = false;
         LOG(ERROR) << "Failed to set zerocopy options on the socket.";
       }

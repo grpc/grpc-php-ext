@@ -44,9 +44,8 @@ namespace grpc_core {
 
 class XdsCertificateVerifier : public grpc_tls_certificate_verifier {
  public:
-  XdsCertificateVerifier(
-      RefCountedPtr<XdsCertificateProvider> xds_certificate_provider,
-      absl::string_view sni_name);
+  explicit XdsCertificateVerifier(
+      RefCountedPtr<XdsCertificateProvider> xds_certificate_provider);
 
   bool Verify(grpc_tls_custom_verification_check_request* request,
               std::function<void(absl::Status)>,
@@ -59,7 +58,6 @@ class XdsCertificateVerifier : public grpc_tls_certificate_verifier {
   int CompareImpl(const grpc_tls_certificate_verifier* other) const override;
 
   RefCountedPtr<XdsCertificateProvider> xds_certificate_provider_;
-  std::string sni_name_;
 };
 
 class XdsCredentials final : public grpc_channel_credentials {

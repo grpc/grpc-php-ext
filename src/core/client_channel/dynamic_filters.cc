@@ -109,8 +109,7 @@ void DynamicFilters::Call::Destroy(void* arg, grpc_error_handle /*error*/) {
   DynamicFilters::Call* self = static_cast<DynamicFilters::Call*>(arg);
   // Keep some members before destroying the subchannel call.
   grpc_closure* after_call_stack_destroy = self->after_call_stack_destroy_;
-  RefCountedPtr<const DynamicFilters> channel_stack =
-      std::move(self->channel_stack_);
+  RefCountedPtr<DynamicFilters> channel_stack = std::move(self->channel_stack_);
   // Destroy the subchannel call.
   self->~Call();
   // Destroy the call stack. This should be after destroying the call, because
@@ -137,10 +136,12 @@ void DynamicFilters::Call::IncrementRefCount(const DebugLocation& /*location*/,
 namespace {
 
 absl::StatusOr<RefCountedPtr<grpc_channel_stack>> CreateChannelStack(
-    const ChannelArgs& args, std::vector<FilterAndConfig> filters) {
+    const ChannelArgs& args, std::vector<const grpc_channel_filter*> filters,
+    const Blackboard* blackboard) {
   ChannelStackBuilderImpl builder("DynamicFilters", GRPC_CLIENT_DYNAMIC, args);
-  for (auto& [filter, config] : filters) {
-    builder.AppendFilter(filter, std::move(config));
+  builder.SetBlackboard(blackboard);
+  for (auto filter : filters) {
+    builder.AppendFilter(filter);
   }
   return builder.Build();
 }
@@ -148,21 +149,22 @@ absl::StatusOr<RefCountedPtr<grpc_channel_stack>> CreateChannelStack(
 }  // namespace
 
 RefCountedPtr<DynamicFilters> DynamicFilters::Create(
-    const ChannelArgs& args, std::vector<FilterAndConfig> filters) {
+    const ChannelArgs& args, std::vector<const grpc_channel_filter*> filters,
+    const Blackboard* blackboard) {
   // Attempt to create channel stack from requested filters.
-  auto p = CreateChannelStack(args, std::move(filters));
+  auto p = CreateChannelStack(args, std::move(filters), blackboard);
   if (!p.ok()) {
     // Channel stack creation failed with requested filters.
     // Create with lame filter instead.
     auto error = p.status();
     p = CreateChannelStack(args.Set(MakeLameClientErrorArg(&error)),
-                           {{&LameClientFilter::kFilter, nullptr}});
+                           {&LameClientFilter::kFilter}, nullptr);
   }
   return MakeRefCounted<DynamicFilters>(std::move(p.value()));
 }
 
 RefCountedPtr<DynamicFilters::Call> DynamicFilters::CreateCall(
-    DynamicFilters::Call::Args args, grpc_error_handle* error) const {
+    DynamicFilters::Call::Args args, grpc_error_handle* error) {
   size_t allocation_size = GPR_ROUND_UP_TO_ALIGNMENT_SIZE(sizeof(Call)) +
                            channel_stack_->call_stack_size;
   Call* call = static_cast<Call*>(args.arena->Alloc(allocation_size));

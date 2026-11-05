@@ -17,17 +17,13 @@
 #ifndef GRPC_SRC_CORE_XDS_GRPC_XDS_COMMON_TYPES_H
 #define GRPC_SRC_CORE_XDS_GRPC_XDS_COMMON_TYPES_H
 
-#include <memory>
 #include <string>
-#include <utility>
 #include <variant>
 #include <vector>
 
 #include "src/core/util/json/json.h"
 #include "src/core/util/matchers.h"
-#include "src/core/util/time.h"
 #include "src/core/util/validation_errors.h"
-#include "src/core/xds/grpc/xds_server_grpc.h"
 #include "absl/strings/string_view.h"
 
 namespace grpc_core {
@@ -87,46 +83,6 @@ struct XdsExtension {
   // Validation fields that need to stay in scope until we're done
   // processing the extension.
   std::vector<ValidationErrors::ScopedField> validation_fields;
-};
-
-struct XdsGrpcService {
-  std::unique_ptr<GrpcXdsServerTarget> server_target;
-  Duration timeout;
-  std::vector<std::pair<std::string, std::string>> initial_metadata;
-
-  bool operator==(const XdsGrpcService& other) const {
-    if (timeout != other.timeout) return false;
-    if (initial_metadata != other.initial_metadata) return false;
-    if (server_target == nullptr) return other.server_target == nullptr;
-    if (other.server_target == nullptr) return false;
-    return server_target->Equals(*other.server_target);
-  }
-
-  std::string ToString() const;
-};
-
-struct HeaderMutationRules {
-  bool disallow_all = false;
-  bool disallow_is_error = false;
-  std::unique_ptr<RE2> allow_expression;
-  std::unique_ptr<RE2> disallow_expression;
-
-  bool IsMutationAllowed(const std::string& header_name) const;
-
-  std::string ToString() const;
-
-  bool operator==(const HeaderMutationRules& other) const {
-    auto is_re_equal = [](RE2* a, RE2* b) {
-      if (a == nullptr) return b == nullptr;
-      if (b == nullptr) return false;
-      return a->pattern() == b->pattern();
-    };
-    return disallow_all == other.disallow_all &&
-           disallow_is_error == other.disallow_is_error &&
-           is_re_equal(disallow_expression.get(),
-                       other.disallow_expression.get()) &&
-           is_re_equal(allow_expression.get(), other.allow_expression.get());
-  }
 };
 
 }  // namespace grpc_core
