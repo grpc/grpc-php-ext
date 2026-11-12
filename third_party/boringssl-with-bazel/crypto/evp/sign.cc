@@ -36,30 +36,39 @@ int EVP_SignUpdate(EVP_MD_CTX *ctx, const void *data, size_t len) {
 
 int EVP_SignFinal(const EVP_MD_CTX *ctx, uint8_t *sig, unsigned *out_sig_len,
                   EVP_PKEY *pkey) {
-  // Ensure the final result will fit in `unsigned`.
+  uint8_t m[EVP_MAX_MD_SIZE];
+  unsigned m_len;
+  int ret = 0;
+  EVP_MD_CTX tmp_ctx;
+  EVP_PKEY_CTX *pkctx = NULL;
   size_t sig_len = EVP_PKEY_size(pkey);
+
+  // Ensure the final result will fit in |unsigned|.
   if (sig_len > UINT_MAX) {
     sig_len = UINT_MAX;
   }
 
   *out_sig_len = 0;
-  uint8_t m[EVP_MAX_MD_SIZE];
-  unsigned m_len;
-  bssl::ScopedEVP_MD_CTX tmp_ctx;
-  if (!EVP_MD_CTX_copy_ex(tmp_ctx.get(), ctx) ||
-      !EVP_DigestFinal_ex(tmp_ctx.get(), m, &m_len)) {
-    return 0;
+  EVP_MD_CTX_init(&tmp_ctx);
+  if (!EVP_MD_CTX_copy_ex(&tmp_ctx, ctx) ||
+      !EVP_DigestFinal_ex(&tmp_ctx, m, &m_len)) {
+    goto out;
   }
+  EVP_MD_CTX_cleanup(&tmp_ctx);
 
-  bssl::UniquePtr<EVP_PKEY_CTX> pkctx(EVP_PKEY_CTX_new(pkey, nullptr));
+  pkctx = EVP_PKEY_CTX_new(pkey, NULL);
   if (!pkctx ||  //
-      !EVP_PKEY_sign_init(pkctx.get()) ||
-      !EVP_PKEY_CTX_set_signature_md(pkctx.get(), ctx->digest) ||
-      !EVP_PKEY_sign(pkctx.get(), sig, &sig_len, m, m_len)) {
-    return 0;
+      !EVP_PKEY_sign_init(pkctx) ||
+      !EVP_PKEY_CTX_set_signature_md(pkctx, ctx->digest) ||
+      !EVP_PKEY_sign(pkctx, sig, &sig_len, m, m_len)) {
+    goto out;
   }
-  *out_sig_len = static_cast<unsigned>(sig_len);
-  return 1;
+  *out_sig_len = (unsigned)sig_len;
+  ret = 1;
+
+out:
+  EVP_PKEY_CTX_free(pkctx);
+  return ret;
 }
 
 int EVP_VerifyInit_ex(EVP_MD_CTX *ctx, const EVP_MD *type, ENGINE *impl) {
@@ -78,18 +87,28 @@ int EVP_VerifyFinal(EVP_MD_CTX *ctx, const uint8_t *sig, size_t sig_len,
                     EVP_PKEY *pkey) {
   uint8_t m[EVP_MAX_MD_SIZE];
   unsigned m_len;
-  bssl::ScopedEVP_MD_CTX tmp_ctx;
-  if (!EVP_MD_CTX_copy_ex(tmp_ctx.get(), ctx) ||
-      !EVP_DigestFinal_ex(tmp_ctx.get(), m, &m_len)) {
-    return 0;
-  }
+  int ret = 0;
+  EVP_MD_CTX tmp_ctx;
+  EVP_PKEY_CTX *pkctx = NULL;
 
-  bssl::UniquePtr<EVP_PKEY_CTX> pkctx(EVP_PKEY_CTX_new(pkey, nullptr));
-  if (!pkctx ||
-      !EVP_PKEY_verify_init(pkctx.get()) ||
-      !EVP_PKEY_CTX_set_signature_md(pkctx.get(), ctx->digest)) {
-    return 0;
+  EVP_MD_CTX_init(&tmp_ctx);
+  if (!EVP_MD_CTX_copy_ex(&tmp_ctx, ctx) ||
+      !EVP_DigestFinal_ex(&tmp_ctx, m, &m_len)) {
+    EVP_MD_CTX_cleanup(&tmp_ctx);
+    goto out;
   }
-  return EVP_PKEY_verify(pkctx.get(), sig, sig_len, m, m_len);
+  EVP_MD_CTX_cleanup(&tmp_ctx);
+
+  pkctx = EVP_PKEY_CTX_new(pkey, NULL);
+  if (!pkctx ||
+      !EVP_PKEY_verify_init(pkctx) ||
+      !EVP_PKEY_CTX_set_signature_md(pkctx, ctx->digest)) {
+    goto out;
+  }
+  ret = EVP_PKEY_verify(pkctx, sig, sig_len, m, m_len);
+
+out:
+  EVP_PKEY_CTX_free(pkctx);
+  return ret;
 }
 

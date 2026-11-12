@@ -38,17 +38,14 @@ IMPLEMENT_PEM_rw(PKCS7, PKCS7, PEM_STRING_PKCS7, PKCS7)
 // the relevant private key: this means can handle "traditional" and PKCS#8
 // formats transparently.
 static RSA *pkey_get_rsa(EVP_PKEY *key, RSA **rsa) {
+  RSA *rtmp;
   if (!key) {
-    return nullptr;
+    return NULL;
   }
-  if (EVP_PKEY_id(key) != EVP_PKEY_RSA) {
-    // Don't accept RSA-PSS keys in this function.
-    OPENSSL_PUT_ERROR(EVP, EVP_R_EXPECTING_AN_RSA_KEY);
-    return nullptr;
-  }
-  RSA *rtmp = EVP_PKEY_get1_RSA(key);
+  rtmp = EVP_PKEY_get1_RSA(key);
+  EVP_PKEY_free(key);
   if (!rtmp) {
-    return nullptr;
+    return NULL;
   }
   if (rsa) {
     RSA_free(*rsa);
@@ -59,13 +56,15 @@ static RSA *pkey_get_rsa(EVP_PKEY *key, RSA **rsa) {
 
 RSA *PEM_read_bio_RSAPrivateKey(BIO *bp, RSA **rsa, pem_password_cb *cb,
                                 void *u) {
-  bssl::UniquePtr<EVP_PKEY> pkey(PEM_read_bio_PrivateKey(bp, nullptr, cb, u));
-  return pkey_get_rsa(pkey.get(), rsa);
+  EVP_PKEY *pktmp;
+  pktmp = PEM_read_bio_PrivateKey(bp, NULL, cb, u);
+  return pkey_get_rsa(pktmp, rsa);
 }
 
 RSA *PEM_read_RSAPrivateKey(FILE *fp, RSA **rsa, pem_password_cb *cb, void *u) {
-  bssl::UniquePtr<EVP_PKEY> pkey(PEM_read_PrivateKey(fp, nullptr, cb, u));
-  return pkey_get_rsa(pkey.get(), rsa);
+  EVP_PKEY *pktmp;
+  pktmp = PEM_read_PrivateKey(fp, NULL, cb, u);
+  return pkey_get_rsa(pktmp, rsa);
 }
 
 IMPLEMENT_PEM_write_cb_const(RSAPrivateKey, RSA, PEM_STRING_RSA, RSAPrivateKey)
@@ -77,12 +76,12 @@ IMPLEMENT_PEM_rw(RSA_PUBKEY, RSA, PEM_STRING_PUBLIC, RSA_PUBKEY)
 static DSA *pkey_get_dsa(EVP_PKEY *key, DSA **dsa) {
   DSA *dtmp;
   if (!key) {
-    return nullptr;
+    return NULL;
   }
   dtmp = EVP_PKEY_get1_DSA(key);
   EVP_PKEY_free(key);
   if (!dtmp) {
-    return nullptr;
+    return NULL;
   }
   if (dsa) {
     DSA_free(*dsa);
@@ -94,7 +93,7 @@ static DSA *pkey_get_dsa(EVP_PKEY *key, DSA **dsa) {
 DSA *PEM_read_bio_DSAPrivateKey(BIO *bp, DSA **dsa, pem_password_cb *cb,
                                 void *u) {
   EVP_PKEY *pktmp;
-  pktmp = PEM_read_bio_PrivateKey(bp, nullptr, cb, u);
+  pktmp = PEM_read_bio_PrivateKey(bp, NULL, cb, u);
   return pkey_get_dsa(pktmp, dsa);  // will free pktmp
 }
 
@@ -103,7 +102,7 @@ IMPLEMENT_PEM_write_cb_const(DSAPrivateKey, DSA, PEM_STRING_DSA, DSAPrivateKey)
 IMPLEMENT_PEM_rw(DSA_PUBKEY, DSA, PEM_STRING_PUBLIC, DSA_PUBKEY)
 DSA *PEM_read_DSAPrivateKey(FILE *fp, DSA **dsa, pem_password_cb *cb, void *u) {
   EVP_PKEY *pktmp;
-  pktmp = PEM_read_PrivateKey(fp, nullptr, cb, u);
+  pktmp = PEM_read_PrivateKey(fp, NULL, cb, u);
   return pkey_get_dsa(pktmp, dsa);  // will free pktmp
 }
 
@@ -112,12 +111,12 @@ IMPLEMENT_PEM_rw_const(DSAparams, DSA, PEM_STRING_DSAPARAMS, DSAparams)
 static EC_KEY *pkey_get_eckey(EVP_PKEY *key, EC_KEY **eckey) {
   EC_KEY *dtmp;
   if (!key) {
-    return nullptr;
+    return NULL;
   }
   dtmp = EVP_PKEY_get1_EC_KEY(key);
   EVP_PKEY_free(key);
   if (!dtmp) {
-    return nullptr;
+    return NULL;
   }
   if (eckey) {
     EC_KEY_free(*eckey);
@@ -129,7 +128,7 @@ static EC_KEY *pkey_get_eckey(EVP_PKEY *key, EC_KEY **eckey) {
 EC_KEY *PEM_read_bio_ECPrivateKey(BIO *bp, EC_KEY **key, pem_password_cb *cb,
                                   void *u) {
   EVP_PKEY *pktmp;
-  pktmp = PEM_read_bio_PrivateKey(bp, nullptr, cb, u);
+  pktmp = PEM_read_bio_PrivateKey(bp, NULL, cb, u);
   return pkey_get_eckey(pktmp, key);  // will free pktmp
 }
 
@@ -140,7 +139,7 @@ IMPLEMENT_PEM_rw(EC_PUBKEY, EC_KEY, PEM_STRING_PUBLIC, EC_PUBKEY)
 EC_KEY *PEM_read_ECPrivateKey(FILE *fp, EC_KEY **eckey, pem_password_cb *cb,
                               void *u) {
   EVP_PKEY *pktmp;
-  pktmp = PEM_read_PrivateKey(fp, nullptr, cb, u);
+  pktmp = PEM_read_PrivateKey(fp, NULL, cb, u);
   return pkey_get_eckey(pktmp, eckey);  // will free pktmp
 }
 

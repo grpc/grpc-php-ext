@@ -28,9 +28,6 @@
 #include "../internal.h"
 #include "internal.h"
 
-
-using namespace bssl;
-
 static int v3_check_critical(const char **value);
 static int v3_check_generic(const char **value);
 static X509_EXTENSION *do_ext_nconf(const CONF *conf, const X509V3_CTX *ctx,
@@ -45,10 +42,10 @@ static unsigned char *generic_asn1(const char *value, const X509V3_CTX *ctx,
 
 X509_EXTENSION *X509V3_EXT_nconf(const CONF *conf, const X509V3_CTX *ctx,
                                  const char *name, const char *value) {
-  // If omitted, fill in an empty `X509V3_CTX`.
+  // If omitted, fill in an empty |X509V3_CTX|.
   X509V3_CTX ctx_tmp;
-  if (ctx == nullptr) {
-    X509V3_set_ctx(&ctx_tmp, nullptr, nullptr, nullptr, nullptr, 0);
+  if (ctx == NULL) {
+    X509V3_set_ctx(&ctx_tmp, NULL, NULL, NULL, NULL, 0);
     X509V3_set_nconf(&ctx_tmp, conf);
     ctx = &ctx_tmp;
   }
@@ -68,10 +65,10 @@ X509_EXTENSION *X509V3_EXT_nconf(const CONF *conf, const X509V3_CTX *ctx,
 
 X509_EXTENSION *X509V3_EXT_nconf_nid(const CONF *conf, const X509V3_CTX *ctx,
                                      int ext_nid, const char *value) {
-  // If omitted, fill in an empty `X509V3_CTX`.
+  // If omitted, fill in an empty |X509V3_CTX|.
   X509V3_CTX ctx_tmp;
-  if (ctx == nullptr) {
-    X509V3_set_ctx(&ctx_tmp, nullptr, nullptr, nullptr, nullptr, 0);
+  if (ctx == NULL) {
+    X509V3_set_ctx(&ctx_tmp, NULL, NULL, NULL, NULL, 0);
     X509V3_set_nconf(&ctx_tmp, conf);
     ctx = &ctx_tmp;
   }
@@ -92,62 +89,62 @@ static X509_EXTENSION *do_ext_nconf(const CONF *conf, const X509V3_CTX *ctx,
   const X509V3_EXT_METHOD *method;
   X509_EXTENSION *ext;
   const STACK_OF(CONF_VALUE) *nval;
-  STACK_OF(CONF_VALUE) *nval_owned = nullptr;
+  STACK_OF(CONF_VALUE) *nval_owned = NULL;
   void *ext_struc;
   if (ext_nid == NID_undef) {
     OPENSSL_PUT_ERROR(X509V3, X509V3_R_UNKNOWN_EXTENSION_NAME);
-    return nullptr;
+    return NULL;
   }
   if (!(method = X509V3_EXT_get_nid(ext_nid))) {
     OPENSSL_PUT_ERROR(X509V3, X509V3_R_UNKNOWN_EXTENSION);
-    return nullptr;
+    return NULL;
   }
   // Now get internal extension representation based on type
   if (method->v2i) {
     if (*value == '@') {
-      // TODO(davidben): This is the only place where `X509V3_EXT_nconf`'s
-      // `conf` parameter is used. All other codepaths use the copy inside
-      // `ctx`. Should this be switched and then the parameter ignored?
-      if (conf == nullptr) {
+      // TODO(davidben): This is the only place where |X509V3_EXT_nconf|'s
+      // |conf| parameter is used. All other codepaths use the copy inside
+      // |ctx|. Should this be switched and then the parameter ignored?
+      if (conf == NULL) {
         OPENSSL_PUT_ERROR(X509V3, X509V3_R_NO_CONFIG_DATABASE);
-        return nullptr;
+        return NULL;
       }
       nval = NCONF_get_section(conf, value + 1);
     } else {
       nval_owned = X509V3_parse_list(value);
       nval = nval_owned;
     }
-    if (nval == nullptr || sk_CONF_VALUE_num(nval) <= 0) {
+    if (nval == NULL || sk_CONF_VALUE_num(nval) <= 0) {
       OPENSSL_PUT_ERROR(X509V3, X509V3_R_INVALID_EXTENSION_STRING);
       ERR_add_error_data(4, "name=", OBJ_nid2sn(ext_nid), ",section=", value);
       sk_CONF_VALUE_pop_free(nval_owned, X509V3_conf_free);
-      return nullptr;
+      return NULL;
     }
     ext_struc = method->v2i(method, ctx, nval);
     sk_CONF_VALUE_pop_free(nval_owned, X509V3_conf_free);
     if (!ext_struc) {
-      return nullptr;
+      return NULL;
     }
   } else if (method->s2i) {
     if (!(ext_struc = method->s2i(method, ctx, value))) {
-      return nullptr;
+      return NULL;
     }
   } else if (method->r2i) {
     // TODO(davidben): Should this check be removed? This matches OpenSSL, but
     // r2i-based extensions do not necessarily require a config database. The
     // two built-in extensions only use it some of the time, and already handle
-    // `X509V3_get_section` returning NULL.
+    // |X509V3_get_section| returning NULL.
     if (!ctx->db) {
       OPENSSL_PUT_ERROR(X509V3, X509V3_R_NO_CONFIG_DATABASE);
-      return nullptr;
+      return NULL;
     }
     if (!(ext_struc = method->r2i(method, ctx, value))) {
-      return nullptr;
+      return NULL;
     }
   } else {
     OPENSSL_PUT_ERROR(X509V3, X509V3_R_EXTENSION_SETTING_NOT_SUPPORTED);
     ERR_add_error_data(2, "name=", OBJ_nid2sn(ext_nid));
-    return nullptr;
+    return NULL;
   }
 
   ext = do_ext_i2d(method, ext_nid, crit, ext_struc);
@@ -159,22 +156,22 @@ static X509_EXTENSION *do_ext_nconf(const CONF *conf, const X509V3_CTX *ctx,
 static X509_EXTENSION *do_ext_i2d(const X509V3_EXT_METHOD *method, int ext_nid,
                                   int crit, void *ext_struc) {
   // Convert the extension's internal representation to DER.
-  unsigned char *ext_der = nullptr;
+  unsigned char *ext_der = NULL;
   int ext_len = ASN1_item_i2d(reinterpret_cast<ASN1_VALUE *>(ext_struc),
                               &ext_der, ASN1_ITEM_ptr(method->it));
   if (ext_len < 0) {
-    return nullptr;
+    return NULL;
   }
 
   ASN1_OCTET_STRING *ext_oct = ASN1_OCTET_STRING_new();
-  if (ext_oct == nullptr) {
+  if (ext_oct == NULL) {
     OPENSSL_free(ext_der);
-    return nullptr;
+    return NULL;
   }
   ASN1_STRING_set0(ext_oct, ext_der, ext_len);
 
   X509_EXTENSION *ext =
-      X509_EXTENSION_create_by_NID(nullptr, ext_nid, crit, ext_oct);
+      X509_EXTENSION_create_by_NID(NULL, ext_nid, crit, ext_oct);
   ASN1_OCTET_STRING_free(ext_oct);
   return ext;
 }
@@ -185,7 +182,7 @@ X509_EXTENSION *X509V3_EXT_i2d(int ext_nid, int crit, void *ext_struc) {
   const X509V3_EXT_METHOD *method;
   if (!(method = X509V3_EXT_get_nid(ext_nid))) {
     OPENSSL_PUT_ERROR(X509V3, X509V3_R_UNKNOWN_EXTENSION);
-    return nullptr;
+    return NULL;
   }
   return do_ext_i2d(method, ext_nid, crit, ext_struc);
 }
@@ -229,54 +226,62 @@ static int v3_check_generic(const char **value) {
 static X509_EXTENSION *v3_generic_extension(const char *ext, const char *value,
                                             int crit, int gen_type,
                                             const X509V3_CTX *ctx) {
-  UniquePtr<ASN1_OBJECT> obj(OBJ_txt2obj(ext, 0));
-  if (obj == nullptr) {
+  unsigned char *ext_der = NULL;
+  size_t ext_len = 0;
+  ASN1_OBJECT *obj = NULL;
+  ASN1_OCTET_STRING *oct = NULL;
+  X509_EXTENSION *extension = NULL;
+  if (!(obj = OBJ_txt2obj(ext, 0))) {
     OPENSSL_PUT_ERROR(X509V3, X509V3_R_EXTENSION_NAME_ERROR);
     ERR_add_error_data(2, "name=", ext);
-    return nullptr;
+    goto err;
   }
 
-  UniquePtr<unsigned char> ext_der;
-  size_t ext_len = 0;
   if (gen_type == 1) {
-    ext_der.reset(x509v3_hex_to_bytes(value, &ext_len));
+    ext_der = x509v3_hex_to_bytes(value, &ext_len);
   } else if (gen_type == 2) {
-    ext_der.reset(generic_asn1(value, ctx, &ext_len));
+    ext_der = generic_asn1(value, ctx, &ext_len);
   }
 
-  if (ext_der == nullptr) {
+  if (ext_der == NULL) {
     OPENSSL_PUT_ERROR(X509V3, X509V3_R_EXTENSION_VALUE_ERROR);
     ERR_add_error_data(2, "value=", value);
-    return nullptr;
+    goto err;
   }
 
   if (ext_len > INT_MAX) {
     OPENSSL_PUT_ERROR(X509V3, ERR_R_OVERFLOW);
-    return nullptr;
+    goto err;
   }
 
-  UniquePtr<ASN1_OCTET_STRING> oct(ASN1_OCTET_STRING_new());
-  if (oct == nullptr) {
-    return nullptr;
+  oct = ASN1_OCTET_STRING_new();
+  if (oct == NULL) {
+    goto err;
   }
 
-  ASN1_STRING_set0(oct.get(), ext_der.get(), (int)ext_len);
-  ext_der.release();  // ASN1_STRING_set0 took ownership.
+  ASN1_STRING_set0(oct, ext_der, (int)ext_len);
+  ext_der = NULL;
 
-  return X509_EXTENSION_create_by_OBJ(nullptr, obj.get(), crit, oct.get());
+  extension = X509_EXTENSION_create_by_OBJ(NULL, obj, crit, oct);
+
+err:
+  ASN1_OBJECT_free(obj);
+  ASN1_OCTET_STRING_free(oct);
+  OPENSSL_free(ext_der);
+  return extension;
 }
 
 static unsigned char *generic_asn1(const char *value, const X509V3_CTX *ctx,
                                    size_t *ext_len) {
   ASN1_TYPE *typ = ASN1_generate_v3(value, ctx);
-  if (typ == nullptr) {
-    return nullptr;
+  if (typ == NULL) {
+    return NULL;
   }
-  unsigned char *ext_der = nullptr;
+  unsigned char *ext_der = NULL;
   int len = i2d_ASN1_TYPE(typ, &ext_der);
   ASN1_TYPE_free(typ);
   if (len < 0) {
-    return nullptr;
+    return NULL;
   }
   *ext_len = len;
   return ext_der;
@@ -289,14 +294,14 @@ int X509V3_EXT_add_nconf_sk(const CONF *conf, const X509V3_CTX *ctx,
                             const char *section,
                             STACK_OF(X509_EXTENSION) **sk) {
   const STACK_OF(CONF_VALUE) *nval = NCONF_get_section(conf, section);
-  if (nval == nullptr) {
+  if (nval == NULL) {
     return 0;
   }
   for (size_t i = 0; i < sk_CONF_VALUE_num(nval); i++) {
     const CONF_VALUE *val = sk_CONF_VALUE_value(nval, i);
     X509_EXTENSION *ext = X509V3_EXT_nconf(conf, ctx, val->name, val->value);
-    int ok = ext != nullptr &&  //
-             (sk == nullptr || X509v3_add_ext(sk, ext, -1) != nullptr);
+    int ok = ext != NULL &&  //
+             (sk == NULL || X509v3_add_ext(sk, ext, -1) != NULL);
     X509_EXTENSION_free(ext);
     if (!ok) {
       return 0;
@@ -309,9 +314,9 @@ int X509V3_EXT_add_nconf_sk(const CONF *conf, const X509V3_CTX *ctx,
 
 int X509V3_EXT_add_nconf(const CONF *conf, const X509V3_CTX *ctx,
                          const char *section, X509 *cert) {
-  STACK_OF(X509_EXTENSION) **sk = nullptr;
+  STACK_OF(X509_EXTENSION) **sk = NULL;
   if (cert) {
-    sk = &FromOpaque(cert)->extensions;
+    sk = &cert->cert_info->extensions;
   }
   return X509V3_EXT_add_nconf_sk(conf, ctx, section, sk);
 }
@@ -320,7 +325,7 @@ int X509V3_EXT_add_nconf(const CONF *conf, const X509V3_CTX *ctx,
 
 int X509V3_EXT_CRL_add_nconf(const CONF *conf, const X509V3_CTX *ctx,
                              const char *section, X509_CRL *crl) {
-  STACK_OF(X509_EXTENSION) **sk = nullptr;
+  STACK_OF(X509_EXTENSION) **sk = NULL;
   if (crl) {
     sk = &crl->crl->extensions;
   }
@@ -331,7 +336,7 @@ int X509V3_EXT_CRL_add_nconf(const CONF *conf, const X509V3_CTX *ctx,
 
 int X509V3_EXT_REQ_add_nconf(const CONF *conf, const X509V3_CTX *ctx,
                              const char *section, X509_REQ *req) {
-  STACK_OF(X509_EXTENSION) *extlist = nullptr, **sk = nullptr;
+  STACK_OF(X509_EXTENSION) *extlist = NULL, **sk = NULL;
   int i;
   if (req) {
     sk = &extlist;
@@ -347,11 +352,11 @@ int X509V3_EXT_REQ_add_nconf(const CONF *conf, const X509V3_CTX *ctx,
 
 // Config database functions
 
-const STACK_OF(CONF_VALUE) *bssl::X509V3_get_section(const X509V3_CTX *ctx,
-                                                     const char *section) {
-  if (ctx->db == nullptr) {
+const STACK_OF(CONF_VALUE) *X509V3_get_section(const X509V3_CTX *ctx,
+                                               const char *section) {
+  if (ctx->db == NULL) {
     OPENSSL_PUT_ERROR(X509V3, X509V3_R_OPERATION_NOT_DEFINED);
-    return nullptr;
+    return NULL;
   }
   return NCONF_get_section(ctx->db, section);
 }

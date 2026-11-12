@@ -22,10 +22,9 @@
 #include <openssl/obj.h>
 #include <openssl/x509.h>
 
+#include "ext_dat.h"
 #include "internal.h"
 
-
-using namespace bssl;
 
 static STACK_OF(CONF_VALUE) *i2v_BASIC_CONSTRAINTS(
     const X509V3_EXT_METHOD *method, void *ext, STACK_OF(CONF_VALUE) *extlist);
@@ -33,21 +32,21 @@ static void *v2i_BASIC_CONSTRAINTS(const X509V3_EXT_METHOD *method,
                                    const X509V3_CTX *ctx,
                                    const STACK_OF(CONF_VALUE) *values);
 
-const X509V3_EXT_METHOD bssl::v3_bcons = {
+const X509V3_EXT_METHOD v3_bcons = {
     NID_basic_constraints,
     0,
     ASN1_ITEM_ref(BASIC_CONSTRAINTS),
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
     i2v_BASIC_CONSTRAINTS,
     v2i_BASIC_CONSTRAINTS,
-    nullptr,
-    nullptr,
-    nullptr,
+    NULL,
+    NULL,
+    NULL,
 };
 
 ASN1_SEQUENCE(BASIC_CONSTRAINTS) = {
@@ -69,9 +68,9 @@ static STACK_OF(CONF_VALUE) *i2v_BASIC_CONSTRAINTS(
 static void *v2i_BASIC_CONSTRAINTS(const X509V3_EXT_METHOD *method,
                                    const X509V3_CTX *ctx,
                                    const STACK_OF(CONF_VALUE) *values) {
-  BASIC_CONSTRAINTS *bcons = nullptr;
+  BASIC_CONSTRAINTS *bcons = NULL;
   if (!(bcons = BASIC_CONSTRAINTS_new())) {
-    return nullptr;
+    return NULL;
   }
   for (size_t i = 0; i < sk_CONF_VALUE_num(values); i++) {
     const CONF_VALUE *val = sk_CONF_VALUE_value(values, i);
@@ -92,5 +91,5 @@ static void *v2i_BASIC_CONSTRAINTS(const X509V3_EXT_METHOD *method,
   return bcons;
 err:
   BASIC_CONSTRAINTS_free(bcons);
-  return nullptr;
+  return NULL;
 }

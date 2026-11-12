@@ -17,18 +17,21 @@
 
 #include <openssl/base.h>
 
-#include "../internal.h"
+#if defined(__cplusplus)
+extern "C" {
+#endif
 
-
-BSSL_NAMESPACE_BEGIN
 
 #if !defined(OPENSSL_NO_ASM) && \
     (defined(OPENSSL_X86_64) || defined(OPENSSL_X86))
 #define MD5_ASM
-extern "C" void md5_block_asm_data_order(uint32_t *state, const uint8_t *data,
-                                         size_t num);
+extern void md5_block_asm_data_order(uint32_t *state, const uint8_t *data,
+                                     size_t num);
 #endif
 
-BSSL_NAMESPACE_END
+
+#if defined(__cplusplus)
+}  // extern "C"
+#endif
 
 #endif  // OPENSSL_HEADER_CRYPTO_MD5_INTERNAL_H
