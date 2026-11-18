@@ -149,7 +149,7 @@ ssl_open_record_t dtls1_process_ack(SSL *ssl, uint8_t *out_alert,
     // We may still be able to drop unused write epochs.
     dtls_clear_unused_write_epochs(ssl);
 
-    // TODO(crbug.com/42290594): Schedule a retransmit. The peer will have
+    // TODO(crbug.com/383016430): Schedule a retransmit. The peer will have
     // waited before sending the ACK, so a partial ACK suggests packet loss.
   }
 
@@ -185,8 +185,8 @@ ssl_open_record_t dtls1_open_app_data(SSL *ssl, Span<uint8_t> *out,
     // post-CCS handshake record. DTLS resets handshake message numbers on each
     // handshake, so renegotiations and retransmissions are ambiguous.
     //
-    // TODO(crbug.com/42290594): Move this logic into
-    // |dtls1_process_handshake_fragments| and integrate it into DTLS 1.3
+    // TODO(crbug.com/383016430): Move this logic into
+    // `dtls1_process_handshake_fragments` and integrate it into DTLS 1.3
     // retransmit conditions.
     CBS cbs, body;
     struct hm_header_st msg_hdr;
@@ -271,7 +271,7 @@ int dtls1_write_record(SSL *ssl, int type, Span<const uint8_t> in,
   assert(in.size() <= SSL3_RT_MAX_PLAIN_LENGTH);
   // There should never be a pending write buffer in DTLS. One can't write half
   // a datagram, so the write buffer is always dropped in
-  // |ssl_write_buffer_flush|.
+  // `ssl_write_buffer_flush`.
   assert(buf->empty());
 
   if (in.size() > SSL3_RT_MAX_PLAIN_LENGTH) {
