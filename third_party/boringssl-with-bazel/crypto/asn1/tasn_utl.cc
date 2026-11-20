@@ -36,8 +36,7 @@ using namespace bssl;
 
 // Given an ASN1_ITEM CHOICE type return the selector value
 int bssl::asn1_get_choice_selector(ASN1_VALUE **pval, const ASN1_ITEM *it) {
-  int *sel =
-      reinterpret_cast<int *>(offset2ptr(asn1_load_ptr(pval), it->utype));
+  int *sel = reinterpret_cast<int *>(offset2ptr(*pval, it->utype));
   return *sel;
 }
 
@@ -45,7 +44,7 @@ int bssl::asn1_get_choice_selector(ASN1_VALUE **pval, const ASN1_ITEM *it) {
 int bssl::asn1_set_choice_selector(ASN1_VALUE **pval, int value,
                                    const ASN1_ITEM *it) {
   int *sel, ret;
-  sel = reinterpret_cast<int *>(offset2ptr(asn1_load_ptr(pval), it->utype));
+  sel = reinterpret_cast<int *>(offset2ptr(*pval, it->utype));
   ret = *sel;
   *sel = value;
   return ret;
@@ -61,7 +60,7 @@ static CRYPTO_refcount_t *asn1_get_references(ASN1_VALUE **pval,
     return nullptr;
   }
   return reinterpret_cast<CRYPTO_refcount_t *>(
-      offset2ptr(asn1_load_ptr(pval), aux->ref_offset));
+      offset2ptr(*pval, aux->ref_offset));
 }
 
 void bssl::asn1_refcount_set_one(ASN1_VALUE **pval, const ASN1_ITEM *it) {
@@ -83,15 +82,14 @@ int bssl::asn1_refcount_dec_and_test_zero(ASN1_VALUE **pval,
 static ASN1_ENCODING *asn1_get_enc_ptr(ASN1_VALUE **pval, const ASN1_ITEM *it) {
   assert(it->itype == ASN1_ITYPE_SEQUENCE);
   const ASN1_AUX *aux;
-  if (!pval || !asn1_load_ptr(pval)) {
+  if (!pval || !*pval) {
     return nullptr;
   }
   aux = reinterpret_cast<const ASN1_AUX *>(it->funcs);
   if (!aux || !(aux->flags & ASN1_AFLG_ENCODING)) {
     return nullptr;
   }
-  return reinterpret_cast<ASN1_ENCODING *>(
-      offset2ptr(asn1_load_ptr(pval), aux->enc_offset));
+  return reinterpret_cast<ASN1_ENCODING *>(offset2ptr(*pval, aux->enc_offset));
 }
 
 void bssl::asn1_enc_init(ASN1_VALUE **pval, const ASN1_ITEM *it) {
@@ -146,27 +144,34 @@ int bssl::asn1_enc_restore(Span<const uint8_t> *out, ASN1_VALUE **pval,
 // Given an ASN1_TEMPLATE get a pointer to a field
 ASN1_VALUE **bssl::asn1_get_field_ptr(ASN1_VALUE **pval,
                                       const ASN1_TEMPLATE *tt) {
-  return reinterpret_cast<ASN1_VALUE **>(
-      offset2ptr(asn1_load_ptr(pval), tt->offset));
+  ASN1_VALUE **pvaltmp =
+      reinterpret_cast<ASN1_VALUE **>(offset2ptr(*pval, tt->offset));
+  // NOTE for BOOLEAN types the field is just a plain int so we can't return
+  // int **, so settle for (int *).
+  return pvaltmp;
 }
 
 // Handle ANY DEFINED BY template, find the selector, look up the relevant
 // ASN1_TEMPLATE in the table and return it.
 const ASN1_TEMPLATE *bssl::asn1_do_adb(ASN1_VALUE **pval,
                                        const ASN1_TEMPLATE *tt, int nullerr) {
+  const ASN1_ADB *adb;
+  const ASN1_ADB_TABLE *atbl;
+  ASN1_VALUE **sfld;
+  int i;
   if (!(tt->flags & ASN1_TFLG_ADB_MASK)) {
     return tt;
   }
 
   // Else ANY DEFINED BY ... get the table
-  const ASN1_ADB *adb = ASN1_ADB_ptr(tt->item);
+  adb = ASN1_ADB_ptr(tt->item);
 
   // Get the selector field
-  ASN1_VALUE **sfld = reinterpret_cast<ASN1_VALUE **>(
-      offset2ptr(asn1_load_ptr(pval), adb->offset));
+  sfld = reinterpret_cast<ASN1_VALUE **>(offset2ptr(*pval, adb->offset));
+
+  // Check if NULL
   int selector;
-  const ASN1_OBJECT *selector_obj = asn1_load_ptr_as<ASN1_OBJECT>(sfld);
-  if (selector_obj == nullptr) {
+  if (*sfld == nullptr) {
     if (!adb->null_tt) {
       goto err;
     }
@@ -177,18 +182,20 @@ const ASN1_TEMPLATE *bssl::asn1_do_adb(ASN1_VALUE **pval,
   // NB: don't check for NID_undef here because it
   // might be a legitimate value in the table
   assert(tt->flags & ASN1_TFLG_ADB_OID);
-  selector = OBJ_obj2nid(asn1_load_ptr_as<ASN1_OBJECT>(sfld));
+  selector = OBJ_obj2nid((ASN1_OBJECT *)*sfld);
 
   // Try to find matching entry in table Maybe should check application types
   // first to allow application override? Might also be useful to have a flag
   // which indicates table is sorted and we can do a binary search. For now
   // stick to a linear search.
-  for (int i = 0; i < adb->tblcount; i++) {
-    const ASN1_ADB_TABLE *atbl = &adb->tbl[i];
+
+  for (atbl = adb->tbl, i = 0; i < adb->tblcount; i++, atbl++) {
     if (atbl->value == selector) {
       return &atbl->tt;
     }
   }
+
+  // FIXME: need to search application table too
 
   // No match, return default type
   if (!adb->default_tt) {

@@ -21,8 +21,6 @@
 #include <openssl/asn1t.h>
 #include <openssl/span.h>
 
-#include "../internal.h"
-
 
 BSSL_NAMESPACE_BEGIN
 
@@ -107,26 +105,6 @@ void asn1_string_init(ASN1_STRING *str, int type);
 // freeing `str` itself.
 void asn1_string_cleanup(ASN1_STRING *str);
 
-// A ScopedASN1String is a stack-allocatable `ASN1_STRING` with managed
-// lifetime.
-// TODO(crbug.com/443769299): Once `ASN1_STRING` is no longer public, this can
-// instead use `DECLARE_OPAQUE_STRUCT`.
-class ScopedASN1String {
- public:
-  explicit ScopedASN1String(int type) { asn1_string_init(&str_, type); }
-  ScopedASN1String(const ScopedASN1String &) = delete;
-  ScopedASN1String &operator=(const ScopedASN1String &) = delete;
-  ~ScopedASN1String() { asn1_string_cleanup(&str_); }
-
-  ASN1_STRING *get() { return &str_; }
-  const ASN1_STRING *get() const { return &str_; }
-  ASN1_STRING *operator->() { return &str_; }
-  const ASN1_STRING *operator->() const { return &str_; }
-
- private:
-  ASN1_STRING str_;
-};
-
 // asn1_parse_string_unchecked parses a DER-encoded string of type `str_type`,
 // tagged with `tag`. It does not check the contents.
 int asn1_parse_string_unchecked(CBS *cbs, ASN1_STRING *out, int str_type,
@@ -197,6 +175,10 @@ const void *asn1_type_value_as_pointer(const ASN1_TYPE *a);
 // takes ownership of `str`.
 void asn1_type_set0_string(ASN1_TYPE *a, ASN1_STRING *str);
 
+// asn1_type_cleanup releases memory associated with `a`'s value, without
+// freeing `a` itself.
+void asn1_type_cleanup(ASN1_TYPE *a);
+
 // asn1_parse_any parses a DER-encoded ASN.1 value of any type from `cbs` and
 // writes the result to `*out`. On success, it advances `cbs` past the parsed
 // element and returns one. On entry, `*out` must contain an `ASN1_TYPE` in some
@@ -210,11 +192,11 @@ int asn1_parse_any(CBS *cbs, ASN1_TYPE *out);
 int asn1_parse_any_as_string(CBS *cbs, ASN1_STRING *out);
 
 // asn1_marshal_any marshals `in` as a DER-encoded ASN.1 value and writes the
-// result to `out`. It returns one on success and zero on error.
+// result to `out`. It returns one on success and zeron on error.
 int asn1_marshal_any(CBB *out, const ASN1_TYPE *in);
 
 // asn1_marshal_any_string marshals `in` as a DER-encoded ASN.1 value and writes
-// the result to `out`. It returns one on success and zero on error.
+// the result to `out`. It returns one on success and zeron on error.
 int asn1_marshal_any_string(CBB *out, const ASN1_STRING *in);
 
 
@@ -235,30 +217,6 @@ void ASN1_item_ex_free(ASN1_VALUE **pval, const ASN1_ITEM *it);
 void ASN1_template_free(ASN1_VALUE **pval, const ASN1_TEMPLATE *tt);
 
 void ASN1_primitive_free(ASN1_VALUE **pval, const ASN1_ITEM *it);
-
-// asn1_load_ptr returns `*pval`, but without asserting `*pval`'s underlying
-// type for strict aliasing. This helper must be used when the field's
-// underlying type is not known statically. It must not be used for
-// `ASN1_BOOLEAN` fields, which are not a pointers.
-inline ASN1_VALUE *asn1_load_ptr(ASN1_VALUE **pval) {
-  ASN1_VALUE *ret;
-  OPENSSL_memcpy(&ret, pval, sizeof(ASN1_VALUE *));
-  return ret;
-}
-
-// asn1_load_ptr_as behaves like `asn1_load_ptr`, but casts the result to `T*`.
-template <typename T>
-inline T *asn1_load_ptr_as(ASN1_VALUE **pval) {
-  return reinterpret_cast<T *>(asn1_load_ptr(pval));
-}
-
-// asn1_store_ptr sets `*pval` to `v`, but without asserting `*pval`'s
-// underlying type for strict aliasing. This helper must be used when the
-// field's underlying type is not known statically. It must not be used for
-// `ASN1_BOOLEAN` fields, which are not a pointers.
-inline void asn1_store_ptr(ASN1_VALUE **pval, const void *v) {
-  OPENSSL_memcpy(pval, &v, sizeof(v));
-}
 
 // asn1_get_choice_selector returns the CHOICE selector value for `*pval`, which
 // must of type `it`.
@@ -359,17 +317,13 @@ typedef struct ASN1_EXTERN_FUNCS_st {
 #define IMPLEMENT_EXTERN_ASN1_PARSE_NEW(name, new_func, free_func, tag,        \
                                         parse_func, marshal_func)              \
   static int name##_new_cb(ASN1_VALUE **pval, const ASN1_ITEM *it) {           \
-    name *obj = new_func();                                                    \
-    if (obj == nullptr) {                                                      \
-      return 0;                                                                \
-    }                                                                          \
-    asn1_store_ptr(pval, obj);                                                 \
-    return 1;                                                                  \
+    *pval = (ASN1_VALUE *)new_func();                                          \
+    return *pval != nullptr;                                                   \
   }                                                                            \
                                                                                \
   static void name##_free_cb(ASN1_VALUE **pval, const ASN1_ITEM *it) {         \
-    free_func(asn1_load_ptr_as<name>(pval));                                   \
-    asn1_store_ptr(pval, nullptr);                                             \
+    free_func((name *)*pval);                                                  \
+    *pval = nullptr;                                                           \
   }                                                                            \
                                                                                \
   static int name##_parse_cb(ASN1_VALUE **pval, CBS *cbs, const ASN1_ITEM *it, \
@@ -383,13 +337,13 @@ typedef struct ASN1_EXTERN_FUNCS_st {
       return 0;                                                                \
     }                                                                          \
     name##_free_cb(pval, it);                                                  \
-    asn1_store_ptr(pval, ret.release());                                       \
+    *pval = (ASN1_VALUE *)ret.release();                                       \
     return 1;                                                                  \
   }                                                                            \
                                                                                \
   static int name##_marshal_cb(CBB *cbb, ASN1_VALUE **pval,                    \
                                const ASN1_ITEM *it) {                          \
-    return marshal_func(cbb, asn1_load_ptr_as<name>(pval));                    \
+    return marshal_func(cbb, (name *)*pval);                                   \
   }                                                                            \
                                                                                \
   static const ASN1_EXTERN_FUNCS name##_extern_funcs = {                       \

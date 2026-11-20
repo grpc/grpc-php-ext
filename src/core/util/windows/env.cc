@@ -20,7 +20,6 @@
 
 #ifdef GPR_WINDOWS_ENV
 
-#include <stdlib.h>
 #include <windows.h>
 
 #include <memory>

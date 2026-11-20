@@ -33,14 +33,8 @@ class TransportFramingEndpointExtension {
            "extension";
   }
 
-  // Registers a callback for the endpoint to send a single frame's payload
-  // over the transport. Ownership of `data` is transferred by value to the
-  // callback, which may be invoked from any thread. Passing `nullptr`
-  // unregisters the callback when the transport is closing. After that call
-  // returns, implementations must not start new invocations of the previous
-  // callback and should discard unsent frames. An invocation already in
-  // progress may still complete, so the callback must tolerate being called
-  // while the transport is closing.
+  // Send data to transport through the given callback. The data will be sent in
+  // a single frame.
   virtual void SetSendFrameCallback(
       absl::AnyInvocable<void(SliceBuffer data)> cb) = 0;
 

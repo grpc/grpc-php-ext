@@ -63,11 +63,11 @@ namespace grpc_core {
 
 namespace {
 
-// TODO(roth): Remove this once the feature proves stable.  (Note: As
-// per gRFC A76, this started as true and then switched to false.)
+// TODO(roth): Flip the default to false once this proves stable, then
+// remove it entirely at some point in the future.
 bool XdsEndpointHashKeyBackwardCompatEnabled() {
   return IsExperimentEnvVarEnabled("GRPC_XDS_ENDPOINT_HASH_KEY_BACKWARD_COMPAT",
-                                   /*default_value=*/false);
+                                   /*default_value=*/true);
 }
 
 void MaybeLogClusterLoadAssignment(

@@ -92,8 +92,7 @@ typedef enum {
   envoy_data_accesslog_v3_DownstreamTunnelSuccessfullyEstablished = 10,
   envoy_data_accesslog_v3_UdpTunnelUpstreamConnected = 11,
   envoy_data_accesslog_v3_UdpPeriodic = 12,
-  envoy_data_accesslog_v3_UdpSessionEnd = 13,
-  envoy_data_accesslog_v3_TcpConnectionStart = 14
+  envoy_data_accesslog_v3_UdpSessionEnd = 13
 } envoy_data_accesslog_v3_AccessLogType;
 
 typedef enum {

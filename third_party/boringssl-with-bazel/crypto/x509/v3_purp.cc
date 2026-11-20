@@ -142,17 +142,40 @@ int X509_supported_extension(const X509_EXTENSION *ex) {
          nid == NID_policy_constraints ||    //
          nid == NID_name_constraints ||      //
          nid == NID_policy_mappings ||       //
-         nid == NID_inhibit_any_policy ||
-         nid == NID_pe_mtcCertificationAuthority_draft;
+         nid == NID_inhibit_any_policy;
+}
+
+static int setup_dp(X509 *x, DIST_POINT *dp) {
+  if (!dp->distpoint || (dp->distpoint->type != 1)) {
+    return 1;
+  }
+  X509_NAME *iname = nullptr;
+  for (size_t i = 0; i < sk_GENERAL_NAME_num(dp->CRLissuer); i++) {
+    GENERAL_NAME *gen = sk_GENERAL_NAME_value(dp->CRLissuer, i);
+    if (gen->type == GEN_DIRNAME) {
+      iname = gen->d.directoryName;
+      break;
+    }
+  }
+  if (!iname) {
+    iname = X509_get_issuer_name(x);
+  }
+
+  return DIST_POINT_set_dpname(dp->distpoint, iname);
 }
 
 static int setup_crldp(X509 *x) {
   int j;
   auto *impl = FromOpaque(x);
-  impl->crldp.reset(reinterpret_cast<STACK_OF(DIST_POINT) *>(
-      X509_get_ext_d2i(x, NID_crl_distribution_points, &j, nullptr)));
+  impl->crldp = reinterpret_cast<STACK_OF(DIST_POINT) *>(
+      X509_get_ext_d2i(x, NID_crl_distribution_points, &j, nullptr));
   if (impl->crldp == nullptr && j != -1) {
     return 0;
+  }
+  for (size_t i = 0; i < sk_DIST_POINT_num(impl->crldp); i++) {
+    if (!setup_dp(x, sk_DIST_POINT_value(impl->crldp, i))) {
+      return 0;
+    }
   }
   return 1;
 }
@@ -276,13 +299,13 @@ int bssl::x509v3_cache_extensions(X509 *x) {
     impl->ex_flags |= EXFLAG_INVALID;
   }
 
-  impl->skid.reset(reinterpret_cast<ASN1_OCTET_STRING *>(
-      X509_get_ext_d2i(x, NID_subject_key_identifier, &j, nullptr)));
+  impl->skid = reinterpret_cast<ASN1_OCTET_STRING *>(
+      X509_get_ext_d2i(x, NID_subject_key_identifier, &j, nullptr));
   if (impl->skid == nullptr && j != -1) {
     impl->ex_flags |= EXFLAG_INVALID;
   }
-  impl->akid.reset(reinterpret_cast<AUTHORITY_KEYID *>(
-      X509_get_ext_d2i(x, NID_authority_key_identifier, &j, nullptr)));
+  impl->akid = reinterpret_cast<AUTHORITY_KEYID *>(
+      X509_get_ext_d2i(x, NID_authority_key_identifier, &j, nullptr));
   if (impl->akid == nullptr && j != -1) {
     impl->ex_flags |= EXFLAG_INVALID;
   }
@@ -290,18 +313,18 @@ int bssl::x509v3_cache_extensions(X509 *x) {
   if (!X509_NAME_cmp(X509_get_subject_name(x), X509_get_issuer_name(x))) {
     impl->ex_flags |= EXFLAG_SI;
     // If SKID matches AKID also indicate self signed
-    if (X509_check_akid(x, impl->akid.get()) == X509_V_OK &&
+    if (X509_check_akid(x, impl->akid) == X509_V_OK &&
         !ku_reject(x, X509v3_KU_KEY_CERT_SIGN)) {
       impl->ex_flags |= EXFLAG_SS;
     }
   }
-  impl->altname.reset(reinterpret_cast<STACK_OF(GENERAL_NAME) *>(
-      X509_get_ext_d2i(x, NID_subject_alt_name, &j, nullptr)));
+  impl->altname = reinterpret_cast<STACK_OF(GENERAL_NAME) *>(
+      X509_get_ext_d2i(x, NID_subject_alt_name, &j, nullptr));
   if (impl->altname == nullptr && j != -1) {
     impl->ex_flags |= EXFLAG_INVALID;
   }
-  impl->nc.reset(reinterpret_cast<NAME_CONSTRAINTS *>(
-      X509_get_ext_d2i(x, NID_name_constraints, &j, nullptr)));
+  impl->nc = reinterpret_cast<NAME_CONSTRAINTS *>(
+      X509_get_ext_d2i(x, NID_name_constraints, &j, nullptr));
   if (impl->nc == nullptr && j != -1) {
     impl->ex_flags |= EXFLAG_INVALID;
   }
@@ -457,7 +480,7 @@ int X509_check_issued(const X509 *issuer, const X509 *subject) {
 
   const auto *subject_impl = FromOpaque(subject);
   if (subject_impl->akid) {
-    int ret = X509_check_akid(issuer, subject_impl->akid.get());
+    int ret = X509_check_akid(issuer, subject_impl->akid);
     if (ret != X509_V_OK) {
       return ret;
     }
@@ -477,7 +500,7 @@ int bssl::X509_check_akid(const X509 *issuer, const AUTHORITY_KEYID *akid) {
   // Check key ids (if present)
   auto *issuer_impl = FromOpaque(issuer);
   if (akid->keyid && issuer_impl->skid &&
-      ASN1_OCTET_STRING_cmp(akid->keyid, issuer_impl->skid.get())) {
+      ASN1_OCTET_STRING_cmp(akid->keyid, issuer_impl->skid)) {
     return X509_V_ERR_AKID_SKID_MISMATCH;
   }
   // Check serial number
@@ -544,7 +567,7 @@ const ASN1_OCTET_STRING *X509_get0_subject_key_id(X509 *x509) {
     return nullptr;
   }
   auto *impl = FromOpaque(x509);
-  return impl->skid.get();
+  return impl->skid;
 }
 
 const ASN1_OCTET_STRING *X509_get0_authority_key_id(X509 *x509) {

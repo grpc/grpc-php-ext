@@ -93,13 +93,6 @@ void *OPENSSL_sk_value(const OPENSSL_STACK *sk, size_t i) {
   return sk->data[i];
 }
 
-void *OPENSSL_sk_last(const OPENSSL_STACK *sk) {
-  if (!sk || sk->num == 0) {
-    return nullptr;
-  }
-  return sk->data[sk->num - 1];
-}
-
 void *OPENSSL_sk_set(OPENSSL_STACK *sk, size_t i, void *value) {
   if (!sk || i >= sk->num) {
     return nullptr;

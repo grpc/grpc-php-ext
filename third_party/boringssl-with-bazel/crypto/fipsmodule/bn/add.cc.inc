@@ -25,14 +25,6 @@
 
 using namespace bssl;
 
-BN_ULONG bssl::bn_add_carry_words(BN_ULONG *rp, const BN_ULONG *ap,
-                                  BN_ULONG carry, size_t num) {
-  for (size_t i = 0; i < num; i++) {
-    rp[i] = CRYPTO_addc_w(ap[i], 0, carry, &carry);
-  }
-  return carry;
-}
-
 int BN_add(BIGNUM *r, const BIGNUM *a, const BIGNUM *b) {
   const BIGNUM *tmp;
   int a_neg = a->neg, ret;
@@ -85,7 +77,10 @@ int bssl::bn_uadd_consttime(BIGNUM *r, const BIGNUM *a, const BIGNUM *b) {
   r->width = max + 1;
 
   BN_ULONG carry = bn_add_words(r->d, a->d, b->d, min);
-  carry = bn_add_carry_words(r->d + min, a->d + min, carry, max - min);
+  for (int i = min; i < max; i++) {
+    r->d[i] = CRYPTO_addc_w(a->d[i], 0, carry, &carry);
+  }
+
   r->d[max] = carry;
   return 1;
 }

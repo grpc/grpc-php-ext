@@ -195,7 +195,7 @@ class EventEnginePosixInterface {
  private:
   static bool IsEventEngineForkEnabled() {
 #ifdef GRPC_ENABLE_FORK_SUPPORT
-    return true;
+    return grpc_core::IsEventEngineForkEnabled();
 #else   // GRPC_ENABLE_FORK_SUPPORT
     return false;
 #endif  // GRPC_ENABLE_FORK_SUPPORT

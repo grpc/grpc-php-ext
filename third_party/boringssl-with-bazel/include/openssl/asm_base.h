@@ -27,7 +27,7 @@
 // when included in assembly, adds that metadata. It also makes defines like
 // `OPENSSL_X86_64` available and includes the prefixing macros.
 //
-// Including this header in an assembly file implies:
+// Including this header in an assembly file imples:
 //
 // - The file does not require an executable stack.
 //

@@ -19,7 +19,4 @@
 #include <openssl/pem.h>
 #include <openssl/x509.h>
 
-#include "internal.h"
-
-
 IMPLEMENT_PEM_rw(X509, X509, PEM_STRING_X509, X509)

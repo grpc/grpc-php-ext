@@ -73,7 +73,7 @@ extern "C" {
 // A consumer may use this symbol in the preprocessor to temporarily build
 // against multiple revisions of BoringSSL at the same time. It is not
 // recommended to do so for longer than is necessary.
-#define BORINGSSL_API_VERSION 43
+#define BORINGSSL_API_VERSION 42
 
 #if defined(BORINGSSL_SHARED_LIBRARY)
 
@@ -395,9 +395,6 @@ typedef void *OPENSSL_BLOCK;
 
 #define BORINGSSL_MAKE_DELETER(type, deleter)
 #define BORINGSSL_MAKE_UP_REF(type, up_ref_func)
-#define BORINGSSL_MAKE_STACK_TRAITS(type, init_func, cleanup_func)
-#define BORINGSSL_MAKE_STACK_TRAITS_MOVABLE(type, init_func, cleanup_func, \
-                                            move_func)
 
 #else
 
@@ -430,14 +427,12 @@ struct Deleter {
   }
 };
 
-template <typename T>
-struct StackAllocatedTraits {};
-
-template <typename T, typename Traits = StackAllocatedTraits<T> >
+template <typename T, typename CleanupRet, void (*init)(T *),
+          CleanupRet (*cleanup)(T *)>
 class StackAllocated {
  public:
-  StackAllocated() { Traits::Init(&ctx_); }
-  ~StackAllocated() { Traits::Cleanup(&ctx_); }
+  StackAllocated() { init(&ctx_); }
+  ~StackAllocated() { cleanup(&ctx_); }
 
   StackAllocated(const StackAllocated &) = delete;
   StackAllocated &operator=(const StackAllocated &) = delete;
@@ -449,29 +444,27 @@ class StackAllocated {
   const T *operator->() const { return &ctx_; }
 
   void Reset() {
-    Traits::Cleanup(&ctx_);
-    Traits::Init(&ctx_);
+    cleanup(&ctx_);
+    init(&ctx_);
   }
 
  private:
   T ctx_;
 };
 
-template <typename T>
-struct StackAllocatedMovableTraits {};
-
-template <typename T, typename Traits = StackAllocatedMovableTraits<T> >
+template <typename T, typename CleanupRet, void (*init)(T *),
+          CleanupRet (*cleanup)(T *), void (*move)(T *, T *)>
 class StackAllocatedMovable {
  public:
-  StackAllocatedMovable() { Traits::Init(&ctx_); }
-  ~StackAllocatedMovable() { Traits::Cleanup(&ctx_); }
+  StackAllocatedMovable() { init(&ctx_); }
+  ~StackAllocatedMovable() { cleanup(&ctx_); }
 
   StackAllocatedMovable(StackAllocatedMovable &&other) {
-    Traits::Init(&ctx_);
-    Traits::Move(&ctx_, &other.ctx_);
+    init(&ctx_);
+    move(&ctx_, &other.ctx_);
   }
   StackAllocatedMovable &operator=(StackAllocatedMovable &&other) {
-    Traits::Move(&ctx_, &other.ctx_);
+    move(&ctx_, &other.ctx_);
     return *this;
   }
 
@@ -482,8 +475,8 @@ class StackAllocatedMovable {
   const T *operator->() const { return &ctx_; }
 
   void Reset() {
-    Traits::Cleanup(&ctx_);
-    Traits::Init(&ctx_);
+    cleanup(&ctx_);
+    init(&ctx_);
   }
 
  private:
@@ -498,26 +491,6 @@ class StackAllocatedMovable {
   struct DeleterImpl<type> {                      \
     static void Free(type *ptr) { deleter(ptr); } \
   };                                              \
-  }
-
-#define BORINGSSL_MAKE_STACK_TRAITS(type, init_func, cleanup_func) \
-  namespace internal {                                             \
-  template <>                                                      \
-  struct StackAllocatedTraits<type> {                              \
-    static void Init(type *ptr) { init_func(ptr); }                \
-    static void Cleanup(type *ptr) { cleanup_func(ptr); }          \
-  };                                                               \
-  }
-
-#define BORINGSSL_MAKE_STACK_TRAITS_MOVABLE(type, init_func, cleanup_func, \
-                                            move_func)                     \
-  namespace internal {                                                     \
-  template <>                                                              \
-  struct StackAllocatedMovableTraits<type> {                               \
-    static void Init(type *ptr) { init_func(ptr); }                        \
-    static void Cleanup(type *ptr) { cleanup_func(ptr); }                  \
-    static void Move(type *out, type *in) { move_func(out, in); }          \
-  };                                                                       \
   }
 
 // Holds ownership of heap-allocated BoringSSL structures. Sample usage:

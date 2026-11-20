@@ -314,7 +314,7 @@ OPENSSL_EXPORT void EVP_MD_CTX_set_flags(EVP_MD_CTX *ctx, int flags);
 
 // EVP_MD_CTX_FLAG_NON_FIPS_ALLOW is meaningless. In OpenSSL it permits non-FIPS
 // algorithms in FIPS mode. But BoringSSL FIPS mode doesn't prohibit algorithms
-// (it's up to the caller to use the FIPS module in a fashion compliant with
+// (it's up the the caller to use the FIPS module in a fashion compliant with
 // their needs). Thus this exists only to allow code to compile.
 #define EVP_MD_CTX_FLAG_NON_FIPS_ALLOW 0
 
@@ -381,9 +381,9 @@ BSSL_NAMESPACE_BEGIN
 
 BORINGSSL_MAKE_DELETER(EVP_MD_CTX, EVP_MD_CTX_free)
 
-BORINGSSL_MAKE_STACK_TRAITS_MOVABLE(EVP_MD_CTX, EVP_MD_CTX_init,
-                                    EVP_MD_CTX_cleanup, EVP_MD_CTX_move)
-using ScopedEVP_MD_CTX = internal::StackAllocatedMovable<EVP_MD_CTX>;
+using ScopedEVP_MD_CTX =
+    internal::StackAllocatedMovable<EVP_MD_CTX, int, EVP_MD_CTX_init,
+                                    EVP_MD_CTX_cleanup, EVP_MD_CTX_move>;
 
 BSSL_NAMESPACE_END
 

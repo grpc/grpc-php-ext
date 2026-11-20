@@ -53,6 +53,7 @@
 #include "src/core/ext/transport/chttp2/transport/legacy_frame.h"
 #include "src/core/ext/transport/chttp2/transport/ping_rate_policy.h"
 #include "src/core/lib/debug/trace.h"
+#include "src/core/lib/experiments/experiments.h"
 #include "src/core/lib/iomgr/closure.h"
 #include "src/core/lib/iomgr/combiner.h"
 #include "src/core/lib/iomgr/endpoint.h"
@@ -430,7 +431,8 @@ static grpc_error_handle init_frame_parser(grpc_chttp2_transport* t,
   }
   t->is_first_frame = false;
 
-  if (t->incoming_frame_size > t->settings.acked().max_frame_size()) {
+  if (grpc_core::IsPh2Perf01Enabled() &&
+      t->incoming_frame_size > t->settings.acked().max_frame_size()) {
     return GRPC_ERROR_CREATE(absl::StrFormat(
         "Frame size %d is larger than max frame size %d",
         t->incoming_frame_size, t->settings.acked().max_frame_size()));
@@ -448,7 +450,8 @@ static grpc_error_handle init_frame_parser(grpc_chttp2_transport* t,
           "grpc_chttp2_stream %08x",
           t->expect_continuation_stream_id, t->incoming_stream_id));
     }
-    if (GPR_UNLIKELY(t->incoming_frame_size == 0u &&
+    if (GPR_UNLIKELY(grpc_core::IsOptimization02Enabled() &&
+                     t->incoming_frame_size == 0u &&
                      (t->incoming_frame_flags &
                       GRPC_CHTTP2_DATA_FLAG_END_HEADERS) == 0u)) {
       t->noop_continuation_frames++;
@@ -582,7 +585,7 @@ static grpc_error_handle init_data_frame_parser(grpc_chttp2_transport* t) {
   grpc_chttp2_stream* s =
       grpc_chttp2_parsing_lookup_stream(t, t->incoming_stream_id);
   absl::Status status = absl::OkStatus();
-  if (t->incoming_frame_size > 0u) {
+  if (!grpc_core::IsOptimization01Enabled() || t->incoming_frame_size > 0u) {
     // Received data frame with size 0 can happen when the peer wants to send an
     // END_STREAM. It is a legitimate data frame.
     grpc_core::chttp2::FlowControlAction action;
@@ -598,7 +601,8 @@ static grpc_error_handle init_data_frame_parser(grpc_chttp2_transport* t) {
       action = upd.MakeAction();
     }
     grpc_chttp2_act_on_flowctl_action(action, t, s);
-  } else if (t->incoming_frame_size == 0u &&
+  } else if (grpc_core::IsOptimization02Enabled() &&
+             t->incoming_frame_size == 0u &&
              (t->incoming_frame_flags & GRPC_CHTTP2_DATA_FLAG_END_STREAM) ==
                  0u) {
     t->noop_data_frames++;

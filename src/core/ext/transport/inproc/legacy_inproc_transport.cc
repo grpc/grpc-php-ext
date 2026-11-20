@@ -40,6 +40,7 @@
 #include "src/core/config/core_configuration.h"
 #include "src/core/lib/channel/channel_args.h"
 #include "src/core/lib/channel/channel_args_preconditioning.h"
+#include "src/core/lib/experiments/experiments.h"
 #include "src/core/lib/iomgr/closure.h"
 #include "src/core/lib/iomgr/endpoint.h"
 #include "src/core/lib/iomgr/error.h"
@@ -196,7 +197,12 @@ struct inproc_stream {
       other_side = nullptr;  // will get filled in soon
       inproc_transport* st = t->other_side;
       if (st->accept_stream_cb == nullptr) {
-        cancel_stream(this, absl::UnavailableError("inproc server closed"));
+        if (grpc_core::IsInprocCancelStreamEnabled()) {
+          cancel_stream(this, absl::UnavailableError("inproc server closed"));
+        } else {
+          cancel_stream_locked(this,
+                               absl::UnavailableError("inproc server closed"));
+        }
       } else {
         st->ref();
         // Pass the client-side stream address to the server-side for a ref

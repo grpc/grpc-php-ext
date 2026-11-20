@@ -15,7 +15,7 @@
 #ifndef OPENSSL_HEADER_CIPHER_H
 #define OPENSSL_HEADER_CIPHER_H
 
-#include <openssl/base.h>  // IWYU pragma: export
+#include <openssl/base.h>   // IWYU pragma: export
 
 #if defined(__cplusplus)
 extern "C" {
@@ -48,11 +48,6 @@ OPENSSL_EXPORT const EVP_CIPHER *EVP_aes_256_ecb(void);
 OPENSSL_EXPORT const EVP_CIPHER *EVP_aes_256_cbc(void);
 OPENSSL_EXPORT const EVP_CIPHER *EVP_aes_256_ctr(void);
 OPENSSL_EXPORT const EVP_CIPHER *EVP_aes_256_ofb(void);
-
-// EVP_aes_256_xts implements AES-256-XTS. Unlike other `EVP_CIPHER`s, this
-// object is single-shot. It does not support splitting a single operation (one
-// set of key, IV, and input) into multiple `EVP_EncryptUpdate_ex` or
-// `EVP_DecryptUpdate_ex` calls.
 OPENSSL_EXPORT const EVP_CIPHER *EVP_aes_256_xts(void);
 
 // EVP_enc_null returns a 'cipher' that passes plaintext through as
@@ -464,7 +459,7 @@ OPENSSL_EXPORT int EVP_BytesToKey(const EVP_CIPHER *type, const EVP_MD *md,
 
 // EVP_CIPH_FLAG_NON_FIPS_ALLOW is meaningless. In OpenSSL it permits non-FIPS
 // algorithms in FIPS mode. But BoringSSL FIPS mode doesn't prohibit algorithms
-// (it's up to the caller to use the FIPS module in a fashion compliant with
+// (it's up the the caller to use the FIPS module in a fashion compliant with
 // their needs). Thus this exists only to allow code to compile.
 #define EVP_CIPH_FLAG_NON_FIPS_ALLOW 0
 
@@ -723,7 +718,7 @@ struct evp_cipher_ctx_st {
   const EVP_CIPHER *cipher;
 
   // app_data is a pointer to opaque, user data.
-  void *app_data;  // application stuff
+  void *app_data;      // application stuff
 
   // cipher_data points to the `cipher` specific state.
   void *cipher_data;
@@ -760,6 +755,9 @@ struct evp_cipher_ctx_st {
   int final_used;
 
   uint8_t final[EVP_MAX_BLOCK_LENGTH];  // possible final block
+
+  // Has this structure been rendered unusable by a failure.
+  int poisoned;
 } /* EVP_CIPHER_CTX */;
 
 typedef struct evp_cipher_info_st {
@@ -778,9 +776,9 @@ BSSL_NAMESPACE_BEGIN
 
 BORINGSSL_MAKE_DELETER(EVP_CIPHER_CTX, EVP_CIPHER_CTX_free)
 
-BORINGSSL_MAKE_STACK_TRAITS(EVP_CIPHER_CTX, EVP_CIPHER_CTX_init,
-                            EVP_CIPHER_CTX_cleanup)
-using ScopedEVP_CIPHER_CTX = internal::StackAllocated<EVP_CIPHER_CTX>;
+using ScopedEVP_CIPHER_CTX =
+    internal::StackAllocated<EVP_CIPHER_CTX, int, EVP_CIPHER_CTX_init,
+                             EVP_CIPHER_CTX_cleanup>;
 
 BSSL_NAMESPACE_END
 

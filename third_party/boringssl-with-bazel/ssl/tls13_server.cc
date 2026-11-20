@@ -70,7 +70,7 @@ static bool resolve_pake_secret(SSL_HANDSHAKE *hs) {
 
 static bool resolve_ecdhe_secret(SSL_HANDSHAKE *hs,
                                  const SSL_CLIENT_HELLO *client_hello) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   const uint16_t group_id = hs->new_session->group_id;
 
   bool found_key_share;
@@ -89,13 +89,12 @@ static bool resolve_ecdhe_secret(SSL_HANDSHAKE *hs,
   }
 
   Array<uint8_t> secret;
-  if (hs->provided_hints != nullptr &&
-      hs->provided_hints->key_share_group_id == group_id &&
-      !hs->provided_hints->key_share_secret.empty()) {
+  SSL_HANDSHAKE_HINTS *const hints = hs->hints.get();
+  if (hints && !hs->hints_requested && hints->key_share_group_id == group_id &&
+      !hints->key_share_secret.empty()) {
     // Copy the key_share secret from hints.
-    if (!hs->key_share_ciphertext.CopyFrom(
-            hs->provided_hints->key_share_ciphertext) ||
-        !secret.CopyFrom(hs->provided_hints->key_share_secret)) {
+    if (!hs->key_share_ciphertext.CopyFrom(hints->key_share_ciphertext) ||
+        !secret.CopyFrom(hints->key_share_secret)) {
       ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
       return false;
     }
@@ -109,14 +108,13 @@ static bool resolve_ecdhe_secret(SSL_HANDSHAKE *hs,
       ssl_send_alert(ssl, SSL3_AL_FATAL, alert);
       return false;
     }
-  }
-  if (hs->pending_hints != nullptr) {
-    hs->pending_hints->key_share_group_id = group_id;
-    if (!hs->pending_hints->key_share_ciphertext.CopyFrom(
-            hs->key_share_ciphertext) ||
-        !hs->pending_hints->key_share_secret.CopyFrom(secret)) {
-      ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
-      return false;
+    if (hints && hs->hints_requested) {
+      hints->key_share_group_id = group_id;
+      if (!hints->key_share_ciphertext.CopyFrom(hs->key_share_ciphertext) ||
+          !hints->key_share_secret.CopyFrom(secret)) {
+        ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+        return false;
+      }
     }
   }
 
@@ -136,8 +134,23 @@ static int ssl_ext_supported_versions_add_serverhello(SSL_HANDSHAKE *hs,
   return 1;
 }
 
+static const SSL_CIPHER *choose_tls13_cipher(
+    const SSL *ssl, const SSL_CLIENT_HELLO *client_hello) {
+  CBS cipher_suites;
+  CBS_init(&cipher_suites, client_hello->cipher_suites,
+           client_hello->cipher_suites_len);
+
+  const uint16_t version = ssl_protocol_version(ssl);
+
+  return ssl_choose_tls13_cipher(cipher_suites,
+                                 ssl->config->aes_hw_override
+                                     ? ssl->config->aes_hw_override_value
+                                     : EVP_has_aes_hardware(),
+                                 version, ssl->config->compliance_policy);
+}
+
 static bool add_new_session_tickets(SSL_HANDSHAKE *hs, bool *out_sent_tickets) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   if (  // If the client doesn't accept resumption with PSK_DHE_KE, don't send a
         // session ticket.
       !hs->accept_psk_mode ||
@@ -158,7 +171,7 @@ static bool add_new_session_tickets(SSL_HANDSHAKE *hs, bool *out_sent_tickets) {
   assert(ssl->session_ctx->num_tickets <= kMaxTickets);
   bool sent_tickets = false;
   for (size_t i = 0; i < ssl->session_ctx->num_tickets; i++) {
-    UniquePtr<SSLSession> session(
+    UniquePtr<SSL_SESSION> session(
         SSL_SESSION_dup(hs->new_session.get(), SSL_SESSION_INCLUDE_NONAUTH));
     if (!session) {
       return false;
@@ -310,7 +323,7 @@ static bool check_pake_credential(SSL_HANDSHAKE *hs,
 static bool check_psk_credential(SSL_HANDSHAKE *hs, const SSLCredential *cred,
                                  const std::optional<SSLOfferedPSKs> &psks) {
   assert(cred->type == SSLCredentialType::kPreSharedKey);
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   if (!psks) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_MISSING_EXTENSION);
     return false;
@@ -342,7 +355,7 @@ static enum ssl_hs_wait_t do_select_parameters(SSL_HANDSHAKE *hs) {
   // the common handshake logic. Resolve the remaining non-resumption
   // parameters. First, parse out another copy of the ClientHello and important
   // extensions.
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   SSLMessage msg;
   SSL_CLIENT_HELLO client_hello;
   if (!hs->GetClientHello(&msg, &client_hello)) {
@@ -376,12 +389,7 @@ static enum ssl_hs_wait_t do_select_parameters(SSL_HANDSHAKE *hs) {
   }
 
   // Negotiate the cipher suite. This must happen before negotiating PSKs.
-  CBS client_cipher_list;
-  CBS_init(&client_cipher_list, client_hello.cipher_suites,
-           client_hello.cipher_suites_len);
-  hs->new_cipher = ssl->config->tls13_cipher_list.ChooseCipher(
-      &client_cipher_list, /*prioritize_client_pref=*/false,
-      ssl_protocol_version(ssl), SSL_kGENERIC, SSL_aGENERIC);
+  hs->new_cipher = choose_tls13_cipher(ssl, &client_hello);
   if (hs->new_cipher == nullptr) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_NO_SHARED_CIPHER);
     ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_HANDSHAKE_FAILURE);
@@ -469,10 +477,10 @@ static enum ssl_hs_wait_t do_select_parameters(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_ticket_aead_result_t select_session(
-    SSL_HANDSHAKE *hs, uint8_t *out_alert, UniquePtr<SSLSession> *out_session,
+    SSL_HANDSHAKE *hs, uint8_t *out_alert, UniquePtr<SSL_SESSION> *out_session,
     int32_t *out_ticket_age_skew, bool *out_offered_ticket,
     const SSLMessage &msg, const SSL_CLIENT_HELLO *client_hello) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   *out_session = nullptr;
 
   CBS pre_shared_key;
@@ -520,7 +528,7 @@ static enum ssl_ticket_aead_result_t select_session(
   // tickets are renewed separately as part of the NewSessionTicket. Also save
   // the ticket so we can find the PSK again on the second ClientHello.
   bool unused_renew;
-  UniquePtr<SSLSession> session;
+  UniquePtr<SSL_SESSION> session;
   enum ssl_ticket_aead_result_t ret =
       ssl_process_ticket(hs, &session, &unused_renew, psk->identity,
                          /*session_id=*/{}, /*save_ticket=*/true);
@@ -563,7 +571,7 @@ static enum ssl_ticket_aead_result_t select_session(
   return ssl_ticket_aead_success;
 }
 
-static bool quic_ticket_compatible(const SSLSession *session,
+static bool quic_ticket_compatible(const SSL_SESSION *session,
                                    const SSL_CONFIG *config) {
   if (!session->is_quic) {
     return true;
@@ -585,7 +593,7 @@ static bool using_certificate(const SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_select_session(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   SSLMessage msg;
   SSL_CLIENT_HELLO client_hello;
   if (!hs->GetClientHello(&msg, &client_hello)) {
@@ -593,7 +601,7 @@ static enum ssl_hs_wait_t do_select_session(SSL_HANDSHAKE *hs) {
   }
 
   uint8_t alert = SSL_AD_DECODE_ERROR;
-  UniquePtr<SSLSession> session;
+  UniquePtr<SSL_SESSION> session;
   bool offered_ticket = false;
   switch (select_session(hs, &alert, &session, &ssl->s3->ticket_age_skew,
                          &offered_ticket, msg, &client_hello)) {
@@ -815,8 +823,8 @@ static enum ssl_hs_wait_t do_select_session(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_send_hello_retry_request(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
-  if (hs->pending_hints != nullptr) {
+  SSL *const ssl = hs->ssl;
+  if (hs->hints_requested) {
     return ssl_hs_hints_ready;
   }
 
@@ -877,7 +885,7 @@ static enum ssl_hs_wait_t do_send_hello_retry_request(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_read_second_client_hello(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   SSLMessage msg;
   if (!ssl->method->get_message(ssl, &msg)) {
     return ssl_hs_read_message;
@@ -988,21 +996,21 @@ static enum ssl_hs_wait_t do_read_second_client_hello(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_send_server_hello(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
 
   Span<uint8_t> random(ssl->s3->server_random);
 
-  if (hs->provided_hints != nullptr &&
-      hs->provided_hints->server_random_tls13.size() == random.size()) {
-    OPENSSL_memcpy(random.data(),
-                   hs->provided_hints->server_random_tls13.data(),
+  SSL_HANDSHAKE_HINTS *const hints = hs->hints.get();
+  if (hints && !hs->hints_requested &&
+      hints->server_random_tls13.size() == random.size()) {
+    OPENSSL_memcpy(random.data(), hints->server_random_tls13.data(),
                    random.size());
   } else {
     RAND_bytes(random.data(), random.size());
-  }
-  if (hs->pending_hints != nullptr &&
-      !hs->pending_hints->server_random_tls13.CopyFrom(random)) {
-    return ssl_hs_error;
+    if (hints && hs->hints_requested &&
+        !hints->server_random_tls13.CopyFrom(random)) {
+      return ssl_hs_error;
+    }
   }
 
   Array<uint8_t> server_hello;
@@ -1137,8 +1145,8 @@ static enum ssl_hs_wait_t do_send_server_certificate_verify(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_send_server_finished(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
-  if (hs->pending_hints != nullptr) {
+  SSL *const ssl = hs->ssl;
+  if (hs->hints_requested) {
     return ssl_hs_hints_ready;
   }
 
@@ -1159,7 +1167,7 @@ static enum ssl_hs_wait_t do_send_server_finished(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_send_half_rtt_ticket(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
 
   if (ssl->s3->early_data_accepted) {
     // If accepting 0-RTT, we send tickets half-RTT. This gets the tickets on
@@ -1208,14 +1216,14 @@ static enum ssl_hs_wait_t do_send_half_rtt_ticket(SSL_HANDSHAKE *hs) {
   return ssl_hs_flush;
 }
 
-static bool uses_end_of_early_data(const SSLImpl *ssl) {
+static bool uses_end_of_early_data(const SSL *ssl) {
   // DTLS and QUIC omit the EndOfEarlyData message. See RFC 9001, section 8.3,
   // and RFC 9147, section 5.6.
   return !SSL_is_quic(ssl) && !SSL_is_dtls(ssl);
 }
 
 static enum ssl_hs_wait_t do_read_second_client_flight(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   if (ssl->s3->early_data_accepted) {
     if (!tls13_set_traffic_key(ssl, ssl_encryption_early_data, evp_aead_open,
                                hs->new_session.get(),
@@ -1245,7 +1253,7 @@ static enum ssl_hs_wait_t do_read_second_client_flight(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_process_end_of_early_data(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   // In protocols that use EndOfEarlyData, we must consume the extra message and
   // switch to client_handshake_secret after the early return.
   if (uses_end_of_early_data(ssl)) {
@@ -1278,7 +1286,7 @@ static enum ssl_hs_wait_t do_process_end_of_early_data(SSL_HANDSHAKE *hs) {
 
 static enum ssl_hs_wait_t do_read_client_encrypted_extensions(
     SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   // For now, only one extension uses client EncryptedExtensions. This function
   // may be generalized if others use it in the future.
   if (hs->new_session->has_application_settings &&
@@ -1334,7 +1342,7 @@ static enum ssl_hs_wait_t do_read_client_encrypted_extensions(
 }
 
 static enum ssl_hs_wait_t do_read_client_certificate(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   if (!hs->cert_request) {
     if (!ssl->s3->session_reused) {
       // OpenSSL returns X509_V_OK when no certificates are requested. This is
@@ -1368,7 +1376,7 @@ static enum ssl_hs_wait_t do_read_client_certificate(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_read_client_certificate_verify(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   if (!ssl_session_has_peer_cred(hs->new_session.get())) {
     // Skip this state.
     hs->tls13_state = state13_read_channel_id;
@@ -1402,7 +1410,7 @@ static enum ssl_hs_wait_t do_read_client_certificate_verify(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_read_channel_id(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   if (!hs->channel_id_negotiated) {
     hs->tls13_state = state13_read_client_finished;
     return ssl_hs_ok;
@@ -1424,7 +1432,7 @@ static enum ssl_hs_wait_t do_read_channel_id(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_read_client_finished(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   SSLMessage msg;
   if (!ssl->method->get_message(ssl, &msg)) {
     return ssl_hs_read_message;
@@ -1469,7 +1477,7 @@ static enum ssl_hs_wait_t do_read_client_finished(SSL_HANDSHAKE *hs) {
 }
 
 static enum ssl_hs_wait_t do_send_new_session_ticket(SSL_HANDSHAKE *hs) {
-  SSLImpl *const ssl = hs->ssl;
+  SSL *const ssl = hs->ssl;
   bool sent_tickets;
   if (!add_new_session_tickets(hs, &sent_tickets)) {
     return ssl_hs_error;

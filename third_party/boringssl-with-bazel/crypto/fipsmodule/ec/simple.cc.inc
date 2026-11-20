@@ -64,11 +64,12 @@ int bssl::ec_GFp_simple_group_set_curve(EC_GROUP *group, const BIGNUM *p,
     return 0;
   }
 
-  if (!BN_copy(tmp, a) || !BN_add_word(tmp, 3)) {
+  // group->a_is_minus3
+  if (!BN_copy(tmp, a) ||
+      !BN_add_word(tmp, 3)) {
     return 0;
   }
   group->a_is_minus3 = (0 == BN_cmp(tmp, &group->field.N));
-  group->field_is_3_mod_4 = (group->field.N.d[0] & 3) == 3;
 
   return 1;
 }
@@ -114,18 +115,18 @@ int bssl::ec_GFp_simple_is_at_infinity(const EC_GROUP *group,
 int bssl::ec_GFp_simple_is_on_curve(const EC_GROUP *group,
                                     const EC_JACOBIAN *point) {
   // We have a curve defined by a Weierstrass equation
-  //      y² = x³ + a⋅x + b.
+  //      y^2 = x^3 + a*x + b.
   // The point to consider is given in Jacobian projective coordinates
-  // where  (X, Y, Z)  represents  (x, y) = (X/Z², Y/Z³).
-  // Substituting this and multiplying by  Z⁶  transforms the above equation
+  // where  (X, Y, Z)  represents  (x, y) = (X/Z^2, Y/Z^3).
+  // Substituting this and multiplying by  Z^6  transforms the above equation
   // into
-  //      Y² = X³ + a⋅X⋅Z⁴ + b⋅Z⁶.
+  //      Y^2 = X^3 + a*X*Z^4 + b*Z^6.
   // To test this, we add up the right-hand side in 'rh'.
   //
   // This function may be used when double-checking the secret result of a point
   // multiplication, so we proceed in constant-time.
 
-  // rh := X²
+  // rh := X^2
   EC_FELEM rh;
   ec_felem_sqr(group, &rh, &point->X);
 
@@ -134,7 +135,7 @@ int bssl::ec_GFp_simple_is_on_curve(const EC_GROUP *group,
   ec_felem_sqr(group, &Z4, &tmp);
   ec_felem_mul(group, &Z6, &Z4, &tmp);
 
-  // rh := rh + a⋅Z⁴
+  // rh := rh + a*Z^4
   if (group->a_is_minus3) {
     ec_felem_add(group, &tmp, &Z4, &Z4);
     ec_felem_add(group, &tmp, &tmp, &Z4);
@@ -144,14 +145,14 @@ int bssl::ec_GFp_simple_is_on_curve(const EC_GROUP *group,
     ec_felem_add(group, &rh, &rh, &tmp);
   }
 
-  // rh := (rh + a⋅Z⁴)⋅X
+  // rh := (rh + a*Z^4)*X
   ec_felem_mul(group, &rh, &rh, &point->X);
 
-  // rh := rh + b⋅Z⁶
+  // rh := rh + b*Z^6
   ec_felem_mul(group, &tmp, &group->b, &Z6);
   ec_felem_add(group, &rh, &rh, &tmp);
 
-  // 'lh' := Y²
+  // 'lh' := Y^2
   ec_felem_sqr(group, &tmp, &point->Y);
 
   ec_felem_sub(group, &tmp, &tmp, &rh);
@@ -177,22 +178,22 @@ int bssl::ec_GFp_simple_points_equal(const EC_GROUP *group,
   // forms. See https://crbug.com/boringssl/326.
 
   // If neither `a` or `b` is infinity, we have to decide whether
-  //     (X_a/Z_a², Y_a/Z_a³) = (X_b/Z_b², Y_b/Z_b³),
+  //     (X_a/Z_a^2, Y_a/Z_a^3) = (X_b/Z_b^2, Y_b/Z_b^3),
   // or equivalently, whether
-  //     (X_a⋅Z_b², Y_a⋅Z_b³) = (X_b⋅Z_a², Y_b⋅Z_a³).
+  //     (X_a*Z_b^2, Y_a*Z_b^3) = (X_b*Z_a^2, Y_b*Z_a^3).
 
   EC_FELEM tmp1, tmp2, Za23, Zb23;
-  ec_felem_sqr(group, &Zb23, &b->Z);         // Zb23 = Z_b²
-  ec_felem_mul(group, &tmp1, &a->X, &Zb23);  // tmp1 = X_a ⋅ Z_b²
-  ec_felem_sqr(group, &Za23, &a->Z);         // Za23 = Z_a²
-  ec_felem_mul(group, &tmp2, &b->X, &Za23);  // tmp2 = X_b ⋅ Z_a²
+  ec_felem_sqr(group, &Zb23, &b->Z);         // Zb23 = Z_b^2
+  ec_felem_mul(group, &tmp1, &a->X, &Zb23);  // tmp1 = X_a * Z_b^2
+  ec_felem_sqr(group, &Za23, &a->Z);         // Za23 = Z_a^2
+  ec_felem_mul(group, &tmp2, &b->X, &Za23);  // tmp2 = X_b * Z_a^2
   ec_felem_sub(group, &tmp1, &tmp1, &tmp2);
   const BN_ULONG x_not_equal = ec_felem_non_zero_mask(group, &tmp1);
 
-  ec_felem_mul(group, &Zb23, &Zb23, &b->Z);  // Zb23 = Z_b³
-  ec_felem_mul(group, &tmp1, &a->Y, &Zb23);  // tmp1 = Y_a ⋅ Z_b³
-  ec_felem_mul(group, &Za23, &Za23, &a->Z);  // Za23 = Z_a³
-  ec_felem_mul(group, &tmp2, &b->Y, &Za23);  // tmp2 = Y_b ⋅ Z_a³
+  ec_felem_mul(group, &Zb23, &Zb23, &b->Z);  // Zb23 = Z_b^3
+  ec_felem_mul(group, &tmp1, &a->Y, &Zb23);  // tmp1 = Y_a * Z_b^3
+  ec_felem_mul(group, &Za23, &Za23, &a->Z);  // Za23 = Z_a^3
+  ec_felem_mul(group, &tmp2, &b->Y, &Za23);  // tmp2 = Y_b * Z_a^3
   ec_felem_sub(group, &tmp1, &tmp1, &tmp2);
   const BN_ULONG y_not_equal = ec_felem_non_zero_mask(group, &tmp1);
   const BN_ULONG x_and_y_equal = ~(x_not_equal | y_not_equal);
@@ -209,18 +210,18 @@ int bssl::ec_GFp_simple_points_equal(const EC_GROUP *group,
 int bssl::ec_affine_jacobian_equal(const EC_GROUP *group, const EC_AFFINE *a,
                                    const EC_JACOBIAN *b) {
   // If `b` is not infinity, we have to decide whether
-  //     (X_a, Y_a) = (X_b/Z_b², Y_b/Z_b³),
+  //     (X_a, Y_a) = (X_b/Z_b^2, Y_b/Z_b^3),
   // or equivalently, whether
-  //     (X_a⋅Z_b², Y_a⋅Z_b³) = (X_b, Y_b).
+  //     (X_a*Z_b^2, Y_a*Z_b^3) = (X_b, Y_b).
 
   EC_FELEM tmp, Zb2;
-  ec_felem_sqr(group, &Zb2, &b->Z);        // Zb2 = Z_b²
-  ec_felem_mul(group, &tmp, &a->X, &Zb2);  // tmp = X_a ⋅ Z_b²
+  ec_felem_sqr(group, &Zb2, &b->Z);        // Zb2 = Z_b^2
+  ec_felem_mul(group, &tmp, &a->X, &Zb2);  // tmp = X_a * Z_b^2
   ec_felem_sub(group, &tmp, &tmp, &b->X);
   const BN_ULONG x_not_equal = ec_felem_non_zero_mask(group, &tmp);
 
-  ec_felem_mul(group, &tmp, &a->Y, &Zb2);  // tmp = Y_a ⋅ Z_b²
-  ec_felem_mul(group, &tmp, &tmp, &b->Z);  // tmp = Y_a ⋅ Z_b³
+  ec_felem_mul(group, &tmp, &a->Y, &Zb2);  // tmp = Y_a * Z_b^2
+  ec_felem_mul(group, &tmp, &tmp, &b->Z);  // tmp = Y_a * Z_b^3
   ec_felem_sub(group, &tmp, &tmp, &b->Y);
   const BN_ULONG y_not_equal = ec_felem_non_zero_mask(group, &tmp);
   const BN_ULONG x_and_y_equal = ~(x_not_equal | y_not_equal);

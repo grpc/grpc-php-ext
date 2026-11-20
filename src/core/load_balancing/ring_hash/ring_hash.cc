@@ -86,8 +86,7 @@ class RingHashJsonArgs final : public JsonArgs {
   bool IsEnabled(absl::string_view key) const override {
     if (key == "request_hash_header") {
       return IsExperimentEnvVarEnabled(
-          "GRPC_EXPERIMENTAL_RING_HASH_SET_REQUEST_HASH_KEY",
-          /*default_value=*/true);
+          "GRPC_EXPERIMENTAL_RING_HASH_SET_REQUEST_HASH_KEY");
     }
     return true;
   }

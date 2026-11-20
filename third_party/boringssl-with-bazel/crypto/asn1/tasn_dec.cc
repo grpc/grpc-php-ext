@@ -139,7 +139,7 @@ ASN1_VALUE *ASN1_item_d2i(ASN1_VALUE **pval, const uint8_t **in, long len,
   // with object reuse, OpenSSL destroys the previous object.
   if (pval != nullptr) {
     ASN1_item_ex_free(pval, it);
-    asn1_store_ptr(pval, ret);
+    *pval = ret;
   }
   *in = CBS_data(&cbs);
   return ret;
@@ -147,15 +147,14 @@ ASN1_VALUE *ASN1_item_d2i(ASN1_VALUE **pval, const uint8_t **in, long len,
 
 template <typename T, T *new_func()>
 static T *ensure_value(ASN1_VALUE **pval) {
-  T *obj = asn1_load_ptr_as<T>(pval);
-  if (obj != nullptr) {
-    return obj;
+  if (*pval) {
+    return reinterpret_cast<T *>(*pval);
   }
-  obj = new_func();
+  T *obj = new_func();
   if (obj == nullptr) {
     return nullptr;
   }
-  asn1_store_ptr(pval, obj);
+  *pval = reinterpret_cast<ASN1_VALUE *>(obj);
   return obj;
 }
 
@@ -228,7 +227,7 @@ static int asn1_parse_item_no_error_cleanup(ASN1_VALUE **pval, CBS *cbs,
         return 0;
       }
 
-      if (asn1_load_ptr(pval)) {
+      if (*pval) {
         // Free up and zero the CHOICE value if initialised.
         int idx = asn1_get_choice_selector(pval, it);
         if (idx >= 0 && idx < it->tcount) {
@@ -292,7 +291,7 @@ static int asn1_parse_item_no_error_cleanup(ASN1_VALUE **pval, CBS *cbs,
         return 0;
       }
 
-      if (!asn1_load_ptr(pval) && !ASN1_item_ex_new(pval, it)) {
+      if (!*pval && !ASN1_item_ex_new(pval, it)) {
         OPENSSL_PUT_ERROR(ASN1, ASN1_R_NESTED_ASN1_ERROR);
         return 0;
       }
@@ -519,8 +518,8 @@ static int asn1_parse_item_primitive(ASN1_VALUE **pval, CBS *cbs,
       if (obj == nullptr) {
         return 0;
       }
-      ASN1_OBJECT_free(asn1_load_ptr_as<ASN1_OBJECT>(pval));
-      asn1_store_ptr(pval, obj.release());
+      ASN1_OBJECT_free((ASN1_OBJECT *)*pval);
+      *pval = (ASN1_VALUE *)obj.release();
       return 1;
     }
     case V_ASN1_NULL: {
@@ -533,7 +532,7 @@ static int asn1_parse_item_primitive(ASN1_VALUE **pval, CBS *cbs,
         OPENSSL_PUT_ERROR(ASN1, ASN1_R_NULL_IS_WRONG_LENGTH);
         return 0;
       }
-      asn1_store_ptr(pval, reinterpret_cast<ASN1_VALUE *>(1));
+      *pval = (ASN1_VALUE *)1;
       return 1;
     }
     case V_ASN1_BOOLEAN: {
@@ -548,8 +547,9 @@ static int asn1_parse_item_primitive(ASN1_VALUE **pval, CBS *cbs,
         OPENSSL_PUT_ERROR(ASN1, ASN1_R_BOOLEAN_IS_WRONG_LENGTH);
         return 0;
       }
-      *reinterpret_cast<ASN1_BOOLEAN *>(pval) =
-          CBS_data(&child)[0] ? ASN1_BOOLEAN_TRUE : ASN1_BOOLEAN_FALSE;
+      ASN1_BOOLEAN *tbool;
+      tbool = (ASN1_BOOLEAN *)pval;
+      *tbool = CBS_data(&child)[0];
       return 1;
     }
   }

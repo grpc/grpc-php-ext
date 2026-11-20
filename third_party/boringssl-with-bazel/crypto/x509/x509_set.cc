@@ -53,7 +53,7 @@ int X509_set_serialNumber(X509 *x, const ASN1_INTEGER *serial) {
   }
 
   auto *impl = FromOpaque(x);
-  return ASN1_STRING_copy(impl->serialNumber.get(), serial);
+  return ASN1_STRING_copy(&impl->serialNumber, serial);
 }
 
 int X509_set_issuer_name(X509 *x, const X509_NAME *name) {
@@ -75,7 +75,7 @@ int X509_set_subject_name(X509 *x, const X509_NAME *name) {
 int X509_set1_notBefore(X509 *x, const ASN1_TIME *tm) {
   // TODO(crbug.com/42290309): Check that `tm->type` is correct.
   auto *impl = FromOpaque(x);
-  return ASN1_STRING_copy(impl->notBefore.get(), tm);
+  return ASN1_STRING_copy(&impl->notBefore, tm);
 }
 
 int X509_set_notBefore(X509 *x, const ASN1_TIME *tm) {
@@ -84,7 +84,7 @@ int X509_set_notBefore(X509 *x, const ASN1_TIME *tm) {
 
 const ASN1_TIME *X509_get0_notBefore(const X509 *x) {
   auto *impl = FromOpaque(x);
-  return impl->notBefore.get();
+  return &impl->notBefore;
 }
 
 ASN1_TIME *X509_getm_notBefore(X509 *x) {
@@ -92,7 +92,7 @@ ASN1_TIME *X509_getm_notBefore(X509 *x) {
   // non-const as this allows mutating `x`. If it comes up for compatibility,
   // we can relax this.
   auto *impl = FromOpaque(x);
-  return impl->notBefore.get();
+  return &impl->notBefore;
 }
 
 ASN1_TIME *X509_get_notBefore(const X509 *x509) {
@@ -100,13 +100,13 @@ ASN1_TIME *X509_get_notBefore(const X509 *x509) {
   // `X509_getm_notBefore` is const-correct. `X509_get_notBefore` was
   // originally a macro, so it needs to capture both get0 and getm use cases.
   const auto *impl = FromOpaque(x509);
-  return const_cast<ASN1_TIME *>(impl->notBefore.get());
+  return const_cast<ASN1_TIME *>(&impl->notBefore);
 }
 
 int X509_set1_notAfter(X509 *x, const ASN1_TIME *tm) {
   // TODO(crbug.com/42290309): Check that `tm->type` is correct.
   auto *impl = FromOpaque(x);
-  return ASN1_STRING_copy(impl->notAfter.get(), tm);
+  return ASN1_STRING_copy(&impl->notAfter, tm);
 }
 
 int X509_set_notAfter(X509 *x, const ASN1_TIME *tm) {
@@ -114,14 +114,16 @@ int X509_set_notAfter(X509 *x, const ASN1_TIME *tm) {
 }
 
 const ASN1_TIME *X509_get0_notAfter(const X509 *x) {
-  return FromOpaque(x)->notAfter.get();
+  auto *impl = FromOpaque(x);
+  return &impl->notAfter;
 }
 
 ASN1_TIME *X509_getm_notAfter(X509 *x) {
   // Note this function takes a const `X509` pointer in OpenSSL. We require
   // non-const as this allows mutating `x`. If it comes up for compatibility,
   // we can relax this.
-  return FromOpaque(x)->notAfter.get();
+  auto *impl = FromOpaque(x);
+  return &impl->notAfter;
 }
 
 ASN1_TIME *X509_get_notAfter(const X509 *x509) {
@@ -129,17 +131,17 @@ ASN1_TIME *X509_get_notAfter(const X509 *x509) {
   // `X509_getm_notAfter` is const-correct. `X509_get_notAfter` was
   // originally a macro, so it needs to capture both get0 and getm use cases.
   const auto *impl = FromOpaque(x509);
-  return const_cast<ASN1_TIME *>(impl->notAfter.get());
+  return const_cast<ASN1_TIME *>(&impl->notAfter);
 }
 
 void X509_get0_uids(const X509 *x509, const ASN1_BIT_STRING **out_issuer_uid,
                     const ASN1_BIT_STRING **out_subject_uid) {
   const auto *impl = FromOpaque(x509);
   if (out_issuer_uid != nullptr) {
-    *out_issuer_uid = impl->issuerUID.get();
+    *out_issuer_uid = impl->issuerUID;
   }
   if (out_subject_uid != nullptr) {
-    *out_subject_uid = impl->subjectUID.get();
+    *out_subject_uid = impl->subjectUID;
   }
 }
 
@@ -152,15 +154,17 @@ int X509_set_pubkey(X509 *x, EVP_PKEY *pkey) {
 }
 
 const STACK_OF(X509_EXTENSION) *X509_get0_extensions(const X509 *x) {
-  return FromOpaque(x)->extensions;
+  auto *impl = FromOpaque(x);
+  return impl->extensions;
 }
 
 const X509_ALGOR *X509_get0_tbs_sigalg(const X509 *x) {
-  return FromOpaque(x)->tbs_sig_alg.get();
+  auto *impl = FromOpaque(x);
+  return &impl->tbs_sig_alg;
 }
 
 X509_PUBKEY *X509_get_X509_PUBKEY(const X509 *x509) {
   // This function is not const-correct for OpenSSL compatibility.
   const auto *impl = FromOpaque(x509);
-  return const_cast<X509Pubkey *>(&impl->key);
+  return const_cast<X509_PUBKEY *>(&impl->key);
 }
