@@ -20,10 +20,9 @@
 #include <openssl/obj.h>
 #include <openssl/x509.h>
 
+#include "ext_dat.h"
 #include "internal.h"
 
-
-using namespace bssl;
 
 static void *v2i_POLICY_MAPPINGS(const X509V3_EXT_METHOD *method,
                                  const X509V3_CTX *ctx,
@@ -31,21 +30,21 @@ static void *v2i_POLICY_MAPPINGS(const X509V3_EXT_METHOD *method,
 static STACK_OF(CONF_VALUE) *i2v_POLICY_MAPPINGS(
     const X509V3_EXT_METHOD *method, void *pmps, STACK_OF(CONF_VALUE) *extlist);
 
-const X509V3_EXT_METHOD bssl::v3_policy_mappings = {
+const X509V3_EXT_METHOD v3_policy_mappings = {
     NID_policy_mappings,
     0,
     ASN1_ITEM_ref(POLICY_MAPPINGS),
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
     i2v_POLICY_MAPPINGS,
     v2i_POLICY_MAPPINGS,
-    nullptr,
-    nullptr,
-    nullptr,
+    0,
+    0,
+    NULL,
 };
 
 ASN1_SEQUENCE(POLICY_MAPPING) = {
@@ -76,8 +75,8 @@ static void *v2i_POLICY_MAPPINGS(const X509V3_EXT_METHOD *method,
                                  const X509V3_CTX *ctx,
                                  const STACK_OF(CONF_VALUE) *nval) {
   POLICY_MAPPINGS *pmaps = sk_POLICY_MAPPING_new_null();
-  if (pmaps == nullptr) {
-    return nullptr;
+  if (pmaps == NULL) {
+    return NULL;
   }
 
   for (size_t i = 0; i < sk_CONF_VALUE_num(nval); i++) {
@@ -89,7 +88,7 @@ static void *v2i_POLICY_MAPPINGS(const X509V3_EXT_METHOD *method,
     }
 
     POLICY_MAPPING *pmap = POLICY_MAPPING_new();
-    if (pmap == nullptr || !sk_POLICY_MAPPING_push(pmaps, pmap)) {
+    if (pmap == NULL || !sk_POLICY_MAPPING_push(pmaps, pmap)) {
       POLICY_MAPPING_free(pmap);
       goto err;
     }
@@ -106,5 +105,5 @@ static void *v2i_POLICY_MAPPINGS(const X509V3_EXT_METHOD *method,
 
 err:
   sk_POLICY_MAPPING_pop_free(pmaps, POLICY_MAPPING_free);
-  return nullptr;
+  return NULL;
 }

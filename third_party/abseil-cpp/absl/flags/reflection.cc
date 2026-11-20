@@ -19,7 +19,6 @@
 
 #include <atomic>
 #include <string>
-#include <utility>
 
 #include "absl/base/config.h"
 #include "absl/base/no_destructor.h"
@@ -54,11 +53,8 @@ class FlagRegistry {
   // Store a flag in this registry. Takes ownership of *flag.
   void RegisterFlag(CommandLineFlag& flag, const char* filename);
 
-  void lock() ABSL_EXCLUSIVE_LOCK_FUNCTION(lock_) { lock_.lock(); }
-  inline void Lock() ABSL_EXCLUSIVE_LOCK_FUNCTION(lock_) { lock(); }
-
-  void unlock() ABSL_UNLOCK_FUNCTION(lock_) { lock_.unlock(); }
-  inline void Unlock() ABSL_UNLOCK_FUNCTION(lock_) { unlock(); }
+  void Lock() ABSL_EXCLUSIVE_LOCK_FUNCTION(lock_) { lock_.Lock(); }
+  void Unlock() ABSL_UNLOCK_FUNCTION(lock_) { lock_.Unlock(); }
 
   // Returns the flag object for the specified name, or nullptr if not found.
   // Will emit a warning if a 'retired' flag is specified.
@@ -91,8 +87,8 @@ namespace {
 
 class FlagRegistryLock {
  public:
-  explicit FlagRegistryLock(FlagRegistry& fr) : fr_(fr) { fr_.lock(); }
-  ~FlagRegistryLock() { fr_.unlock(); }
+  explicit FlagRegistryLock(FlagRegistry& fr) : fr_(fr) { fr_.Lock(); }
+  ~FlagRegistryLock() { fr_.Unlock(); }
 
  private:
   FlagRegistry& fr_;
@@ -321,9 +317,9 @@ class FlagSaverImpl {
   }
 
   // Restores the saved flag states into the flag registry.
-  void RestoreToRegistry() && {
+  void RestoreToRegistry() {
     for (const auto& flag_state : backup_registry_) {
-      std::move(*flag_state).Restore();
+      flag_state->Restore();
     }
   }
 
@@ -341,7 +337,7 @@ FlagSaver::FlagSaver() : impl_(new flags_internal::FlagSaverImpl) {
 FlagSaver::~FlagSaver() {
   if (!impl_) return;
 
-  std::move(*impl_).RestoreToRegistry();
+  impl_->RestoreToRegistry();
   delete impl_;
 }
 

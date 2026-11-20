@@ -18,9 +18,6 @@
 
 #include "../fipsmodule/bcm_interface.h"
 
-
-using namespace bssl;
-
 void AES_encrypt(const uint8_t *in, uint8_t *out, const AES_KEY *key) {
   BCM_aes_encrypt(in, out, key);
 }

@@ -22,8 +22,6 @@
 #include "internal.h"
 
 
-using namespace bssl;
-
 ASN1_SEQUENCE(OTHERNAME) = {
     ASN1_SIMPLE(OTHERNAME, type_id, ASN1_OBJECT),
     // Maybe have a true ANY DEFINED BY later
@@ -40,8 +38,6 @@ ASN1_SEQUENCE(EDIPARTYNAME) = {
 
 IMPLEMENT_ASN1_ALLOC_FUNCTIONS(EDIPARTYNAME)
 
-BSSL_NAMESPACE_BEGIN
-
 ASN1_CHOICE(GENERAL_NAME) = {
     ASN1_IMP(GENERAL_NAME, d.otherName, OTHERNAME, GEN_OTHERNAME),
     ASN1_IMP(GENERAL_NAME, d.rfc822Name, ASN1_IA5STRING, GEN_EMAIL),
@@ -57,31 +53,25 @@ ASN1_CHOICE(GENERAL_NAME) = {
     ASN1_IMP(GENERAL_NAME, d.registeredID, ASN1_OBJECT, GEN_RID),
 } ASN1_CHOICE_END(GENERAL_NAME)
 
-BSSL_NAMESPACE_END
-
-IMPLEMENT_ASN1_FUNCTIONS_const(GENERAL_NAME)
-
-BSSL_NAMESPACE_BEGIN
+IMPLEMENT_ASN1_FUNCTIONS(GENERAL_NAME)
 
 ASN1_ITEM_TEMPLATE(GENERAL_NAMES) = ASN1_EX_TEMPLATE_TYPE(ASN1_TFLG_SEQUENCE_OF,
                                                           0, GeneralNames,
                                                           GENERAL_NAME)
 ASN1_ITEM_TEMPLATE_END(GENERAL_NAMES)
 
-BSSL_NAMESPACE_END
+IMPLEMENT_ASN1_FUNCTIONS(GENERAL_NAMES)
 
-IMPLEMENT_ASN1_FUNCTIONS_const(GENERAL_NAMES)
-
-IMPLEMENT_ASN1_DUP_FUNCTION_const(GENERAL_NAME)
+IMPLEMENT_ASN1_DUP_FUNCTION(GENERAL_NAME)
 
 static int edipartyname_cmp(const EDIPARTYNAME *a, const EDIPARTYNAME *b) {
   // nameAssigner is optional and may be NULL.
-  if (a->nameAssigner == nullptr) {
-    if (b->nameAssigner != nullptr) {
+  if (a->nameAssigner == NULL) {
+    if (b->nameAssigner != NULL) {
       return -1;
     }
   } else {
-    if (b->nameAssigner == nullptr ||
+    if (b->nameAssigner == NULL ||
         ASN1_STRING_cmp(a->nameAssigner, b->nameAssigner) != 0) {
       return -1;
     }
@@ -108,7 +98,7 @@ static int othername_cmp(const OTHERNAME *a, const OTHERNAME *b) {
 }
 
 // Returns 0 if they are equal, != 0 otherwise.
-int bssl::GENERAL_NAME_cmp(const GENERAL_NAME *a, const GENERAL_NAME *b) {
+int GENERAL_NAME_cmp(const GENERAL_NAME *a, const GENERAL_NAME *b) {
   if (!a || !b || a->type != b->type) {
     return -1;
   }
@@ -205,7 +195,7 @@ void *GENERAL_NAME_get0_value(const GENERAL_NAME *a, int *out_type) {
       return a->d.rid;
 
     default:
-      return nullptr;
+      return NULL;
   }
 }
 
@@ -228,10 +218,10 @@ int GENERAL_NAME_get0_otherName(const GENERAL_NAME *gen, ASN1_OBJECT **out_oid,
   if (gen->type != GEN_OTHERNAME) {
     return 0;
   }
-  if (out_oid != nullptr) {
+  if (out_oid != NULL) {
     *out_oid = gen->d.otherName->type_id;
   }
-  if (out_value != nullptr) {
+  if (out_value != NULL) {
     *out_value = gen->d.otherName->value;
   }
   return 1;

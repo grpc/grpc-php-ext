@@ -19,10 +19,6 @@
 // `absl::Cleanup` implements the scope guard idiom, invoking the contained
 // callback's `operator()() &&` on scope exit.
 //
-// This class doesn't allocate or take any locks, and is safe to use in a signal
-// handler. Of course the callback with which it is constructed also must be
-// signal safe in order for this to be useful.
-//
 // Example:
 //
 // ```
@@ -75,7 +71,6 @@
 #include <utility>
 
 #include "absl/base/config.h"
-#include "absl/base/internal/hardening.h"
 #include "absl/base/macros.h"
 #include "absl/cleanup/internal/cleanup.h"
 
@@ -96,12 +91,12 @@ class [[nodiscard]] Cleanup final {
   Cleanup(Cleanup&& other) = default;
 
   void Cancel() && {
-    absl::base_internal::HardeningAssert(storage_.IsCallbackEngaged());
+    ABSL_HARDENING_ASSERT(storage_.IsCallbackEngaged());
     storage_.DestroyCallback();
   }
 
   void Invoke() && {
-    absl::base_internal::HardeningAssert(storage_.IsCallbackEngaged());
+    ABSL_HARDENING_ASSERT(storage_.IsCallbackEngaged());
     storage_.InvokeCallback();
     storage_.DestroyCallback();
   }

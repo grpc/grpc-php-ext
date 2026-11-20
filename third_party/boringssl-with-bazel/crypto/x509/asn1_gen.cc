@@ -29,8 +29,6 @@
 #include "internal.h"
 
 
-using namespace bssl;
-
 // Although this file is in crypto/x509 for layering purposes, it emits
 // errors from the ASN.1 module for OpenSSL compatibility.
 
@@ -48,35 +46,39 @@ using namespace bssl;
 #define ASN1_GEN_FORMAT_HEX 3
 #define ASN1_GEN_FORMAT_BITLIST 4
 
-// generate_v3 converts `str` into an ASN.1 structure and writes the result to
-// `cbb`. It returns one on success and zero on error. `depth` bounds recursion,
-// and `format` specifies the current format modifier.
+// generate_v3 converts |str| into an ASN.1 structure and writes the result to
+// |cbb|. It returns one on success and zero on error. |depth| bounds recursion,
+// and |format| specifies the current format modifier.
 //
-// If `tag` is non-zero, the structure is implicitly tagged with `tag`. `tag`
+// If |tag| is non-zero, the structure is implicitly tagged with |tag|. |tag|
 // must not have the constructed bit set.
 static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
                        CBS_ASN1_TAG tag, int format, int depth);
 
 static int bitstr_cb(const char *elem, size_t len, void *bitstr);
 
-ASN1_TYPE *bssl::ASN1_generate_v3(const char *str, const X509V3_CTX *cnf) {
-  ScopedCBB cbb;
-  if (!CBB_init(cbb.get(), 0) ||  //
-      !generate_v3(cbb.get(), str, cnf, /*tag=*/0, ASN1_GEN_FORMAT_ASCII,
+ASN1_TYPE *ASN1_generate_v3(const char *str, const X509V3_CTX *cnf) {
+  CBB cbb;
+  if (!CBB_init(&cbb, 0) ||  //
+      !generate_v3(&cbb, str, cnf, /*tag=*/0, ASN1_GEN_FORMAT_ASCII,
                    /*depth=*/0)) {
-    return nullptr;
+    CBB_cleanup(&cbb);
+    return NULL;
   }
 
   // While not strictly necessary to avoid a DoS (we rely on any super-linear
   // checks being performed internally), cap the overall output to
-  // `ASN1_GEN_MAX_OUTPUT` so the externally-visible behavior is consistent.
-  if (CBB_len(cbb.get()) > ASN1_GEN_MAX_OUTPUT) {
+  // |ASN1_GEN_MAX_OUTPUT| so the externally-visible behavior is consistent.
+  if (CBB_len(&cbb) > ASN1_GEN_MAX_OUTPUT) {
     OPENSSL_PUT_ERROR(ASN1, ASN1_R_TOO_LONG);
-    return nullptr;
+    CBB_cleanup(&cbb);
+    return NULL;
   }
 
-  const uint8_t *der = CBB_data(cbb.get());
-  return d2i_ASN1_TYPE(nullptr, &der, CBB_len(cbb.get()));
+  const uint8_t *der = CBB_data(&cbb);
+  ASN1_TYPE *ret = d2i_ASN1_TYPE(NULL, &der, CBB_len(&cbb));
+  CBB_cleanup(&cbb);
+  return ret;
 }
 
 static int cbs_str_equal(const CBS *cbs, const char *str) {
@@ -84,7 +86,7 @@ static int cbs_str_equal(const CBS *cbs, const char *str) {
          OPENSSL_memcmp(CBS_data(cbs), str, strlen(str)) == 0;
 }
 
-// parse_tag decodes a tag specifier in `cbs`. It returns the tag on success or
+// parse_tag decodes a tag specifier in |cbs|. It returns the tag on success or
 // zero on error.
 static CBS_ASN1_TAG parse_tag(const CBS *cbs) {
   CBS copy = *cbs;
@@ -151,7 +153,7 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
   }
 
   // Process modifiers. This function uses a mix of NUL-terminated strings and
-  // `CBS`. Several functions only work with NUL-terminated strings, so we need
+  // |CBS|. Several functions only work with NUL-terminated strings, so we need
   // to keep track of when a slice spans the whole buffer.
   for (;;) {
     // Skip whitespace.
@@ -161,7 +163,7 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
 
     // Modifiers end at commas.
     const char *comma = strchr(str, ',');
-    if (comma == nullptr) {
+    if (comma == NULL) {
       break;
     }
 
@@ -189,7 +191,7 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
       CBS_skip(&modifier, 1);  // Skip the colon.
     } else {
       name = modifier;
-      CBS_init(&modifier, nullptr, 0);
+      CBS_init(&modifier, NULL, 0);
     }
 
     if (cbs_str_equal(&name, "FORMAT") || cbs_str_equal(&name, "FORM")) {
@@ -241,7 +243,7 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
       tag = tag == 0 ? CBS_ASN1_SET : (tag | CBS_ASN1_CONSTRUCTED);
       return generate_wrapped(cbb, str, cnf, tag, /*padding=*/0, format, depth);
     } else {
-      // If this was not a recognized modifier, rewind `str` to before splitting
+      // If this was not a recognized modifier, rewind |str| to before splitting
       // on the comma. The type itself consumes all remaining input.
       str = str_old;
       break;
@@ -253,7 +255,7 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
   const char *colon = strchr(str, ':');
   CBS name;
   const char *value;
-  int has_value = colon != nullptr;
+  int has_value = colon != NULL;
   if (has_value) {
     CBS_init(&name, (const uint8_t *)str, colon - str);
     value = colon + 1;
@@ -301,9 +303,9 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
       {"SET", CBS_ASN1_SET},
   };
   CBS_ASN1_TAG type = 0;
-  for (const auto &t : kTypes) {
-    if (cbs_str_equal(&name, t.name)) {
-      type = t.type;
+  for (size_t i = 0; i < OPENSSL_ARRAY_SIZE(kTypes); i++) {
+    if (cbs_str_equal(&name, kTypes[i].name)) {
+      type = kTypes[i].type;
       break;
     }
   }
@@ -346,12 +348,12 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
         OPENSSL_PUT_ERROR(ASN1, ASN1_R_INTEGER_NOT_ASCII_FORMAT);
         return 0;
       }
-      ASN1_INTEGER *obj = s2i_ASN1_INTEGER(nullptr, value);
-      if (obj == nullptr) {
+      ASN1_INTEGER *obj = s2i_ASN1_INTEGER(NULL, value);
+      if (obj == NULL) {
         OPENSSL_PUT_ERROR(ASN1, ASN1_R_ILLEGAL_INTEGER);
         return 0;
       }
-      int len = i2c_ASN1_INTEGER(obj, nullptr);
+      int len = i2c_ASN1_INTEGER(obj, NULL);
       uint8_t *out;
       int ok = len > 0 &&  //
                CBB_add_space(&child, &out, len) &&
@@ -366,7 +368,7 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
         return 0;
       }
       ASN1_OBJECT *obj = OBJ_txt2obj(value, /*dont_search_names=*/0);
-      if (obj == nullptr || obj->length == 0) {
+      if (obj == NULL || obj->length == 0) {
         OPENSSL_PUT_ERROR(ASN1, ASN1_R_ILLEGAL_OBJECT);
         return 0;
       }
@@ -384,9 +386,9 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
       CBS value_cbs;
       CBS_init(&value_cbs, (const uint8_t *)value, strlen(value));
       int ok = type == CBS_ASN1_UTCTIME
-                   ? CBS_parse_utc_time(&value_cbs, nullptr,
+                   ? CBS_parse_utc_time(&value_cbs, NULL,
                                         /*allow_timezone_offset=*/0)
-                   : CBS_parse_generalized_time(&value_cbs, nullptr,
+                   : CBS_parse_generalized_time(&value_cbs, NULL,
                                                 /*allow_timezone_offset=*/0);
       if (!ok) {
         OPENSSL_PUT_ERROR(ASN1, ASN1_R_ILLEGAL_TIME_VALUE);
@@ -412,11 +414,11 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
         return 0;
       }
 
-      // `maxsize` is measured in code points, rather than bytes, but pass it in
+      // |maxsize| is measured in code points, rather than bytes, but pass it in
       // as a loose cap so fuzzers can exit from excessively long inputs
-      // earlier. This limit is not load-bearing because `ASN1_mbstring_ncopy`'s
+      // earlier. This limit is not load-bearing because |ASN1_mbstring_ncopy|'s
       // output is already linear in the input.
-      ASN1_STRING *obj = nullptr;
+      ASN1_STRING *obj = NULL;
       if (ASN1_mbstring_ncopy(&obj, (const uint8_t *)value, -1, encoding,
                               ASN1_tag2bit(type), /*minsize=*/0,
                               /*maxsize=*/ASN1_GEN_MAX_OUTPUT) <= 0) {
@@ -430,7 +432,7 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
     case CBS_ASN1_BITSTRING:
       if (format == ASN1_GEN_FORMAT_BITLIST) {
         ASN1_BIT_STRING *obj = ASN1_BIT_STRING_new();
-        if (obj == nullptr) {
+        if (obj == NULL) {
           return 0;
         }
         if (!CONF_parse_list(value, ',', 1, bitstr_cb, obj)) {
@@ -438,7 +440,7 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
           ASN1_BIT_STRING_free(obj);
           return 0;
         }
-        int len = i2c_ASN1_BIT_STRING(obj, nullptr);
+        int len = i2c_ASN1_BIT_STRING(obj, NULL);
         uint8_t *out;
         int ok = len > 0 &&  //
                  CBB_add_space(&child, &out, len) &&
@@ -463,7 +465,7 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
       if (format == ASN1_GEN_FORMAT_HEX) {
         size_t len;
         uint8_t *data = x509v3_hex_to_bytes(value, &len);
-        if (data == nullptr) {
+        if (data == NULL) {
           OPENSSL_PUT_ERROR(ASN1, ASN1_R_ILLEGAL_HEX);
           return 0;
         }
@@ -478,12 +480,12 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
     case CBS_ASN1_SEQUENCE:
     case CBS_ASN1_SET:
       if (has_value) {
-        if (cnf == nullptr) {
+        if (cnf == NULL) {
           OPENSSL_PUT_ERROR(ASN1, ASN1_R_SEQUENCE_OR_SET_NEEDS_CONFIG);
           return 0;
         }
         const STACK_OF(CONF_VALUE) *section = X509V3_get_section(cnf, value);
-        if (section == nullptr) {
+        if (section == NULL) {
           OPENSSL_PUT_ERROR(ASN1, ASN1_R_SEQUENCE_OR_SET_NEEDS_CONFIG);
           return 0;
         }
@@ -493,8 +495,8 @@ static int generate_v3(CBB *cbb, const char *str, const X509V3_CTX *cnf,
                            ASN1_GEN_FORMAT_ASCII, depth + 1)) {
             return 0;
           }
-          // This recursive call, by referencing `section`, is the one place
-          // where `generate_v3`'s output can be super-linear in the input.
+          // This recursive call, by referencing |section|, is the one place
+          // where |generate_v3|'s output can be super-linear in the input.
           // Check bounds here.
           if (CBB_len(&child) > ASN1_GEN_MAX_OUTPUT) {
             OPENSSL_PUT_ERROR(ASN1, ASN1_R_TOO_LONG);

@@ -19,8 +19,6 @@
 #include "internal.h"
 
 
-using namespace bssl;
-
 int BN_mod_inverse_odd(BIGNUM *out, int *out_no_inverse, const BIGNUM *a,
                        const BIGNUM *n, BN_CTX *ctx) {
   *out_no_inverse = 0;
@@ -35,20 +33,23 @@ int BN_mod_inverse_odd(BIGNUM *out, int *out_no_inverse, const BIGNUM *a,
     return 0;
   }
 
+  BIGNUM *A, *B, *X, *Y;
+  int ret = 0;
   int sign;
-  BN_CTXScope scope(ctx);
-  BIGNUM *A = BN_CTX_get(ctx);
-  BIGNUM *B = BN_CTX_get(ctx);
-  BIGNUM *X = BN_CTX_get(ctx);
-  BIGNUM *Y = BN_CTX_get(ctx);
+
+  BN_CTX_start(ctx);
+  A = BN_CTX_get(ctx);
+  B = BN_CTX_get(ctx);
+  X = BN_CTX_get(ctx);
+  Y = BN_CTX_get(ctx);
   BIGNUM *R = out;
-  if (Y == nullptr) {
-    return 0;
+  if (Y == NULL) {
+    goto err;
   }
 
   BN_zero(Y);
-  if (!BN_one(X) || BN_copy(B, a) == nullptr || BN_copy(A, n) == nullptr) {
-    return 0;
+  if (!BN_one(X) || BN_copy(B, a) == NULL || BN_copy(A, n) == NULL) {
+    goto err;
   }
   A->neg = 0;
   sign = -1;
@@ -79,17 +80,17 @@ int BN_mod_inverse_odd(BIGNUM *out, int *out_no_inverse, const BIGNUM *a,
 
       if (BN_is_odd(X)) {
         if (!BN_uadd(X, X, n)) {
-          return 0;
+          goto err;
         }
       }
       // now X is even, so we can easily divide it by two
       if (!BN_rshift1(X, X)) {
-        return 0;
+        goto err;
       }
     }
     if (shift > 0) {
       if (!BN_rshift(B, B, shift)) {
-        return 0;
+        goto err;
       }
     }
 
@@ -101,17 +102,17 @@ int BN_mod_inverse_odd(BIGNUM *out, int *out_no_inverse, const BIGNUM *a,
 
       if (BN_is_odd(Y)) {
         if (!BN_uadd(Y, Y, n)) {
-          return 0;
+          goto err;
         }
       }
       // now Y is even
       if (!BN_rshift1(Y, Y)) {
-        return 0;
+        goto err;
       }
     }
     if (shift > 0) {
       if (!BN_rshift(A, A, shift)) {
-        return 0;
+        goto err;
       }
     }
 
@@ -128,21 +129,21 @@ int BN_mod_inverse_odd(BIGNUM *out, int *out_no_inverse, const BIGNUM *a,
     if (BN_ucmp(B, A) >= 0) {
       // -sign*(X + Y)*a == B - A  (mod |n|)
       if (!BN_uadd(X, X, Y)) {
-        return 0;
+        goto err;
       }
       // NB: we could use BN_mod_add_quick(X, X, Y, n), but that
       // actually makes the algorithm slower
       if (!BN_usub(B, B, A)) {
-        return 0;
+        goto err;
       }
     } else {
       //  sign*(X + Y)*a == A - B  (mod |n|)
       if (!BN_uadd(Y, Y, X)) {
-        return 0;
+        goto err;
       }
       // as above, BN_mod_add_quick(Y, Y, X, n) would slow things down
       if (!BN_usub(A, A, B)) {
-        return 0;
+        goto err;
       }
     }
   }
@@ -150,7 +151,7 @@ int BN_mod_inverse_odd(BIGNUM *out, int *out_no_inverse, const BIGNUM *a,
   if (!BN_is_one(A)) {
     *out_no_inverse = 1;
     OPENSSL_PUT_ERROR(BN, BN_R_NO_INVERSE);
-    return 0;
+    goto err;
   }
 
   // The while loop (Euclid's algorithm) ends when
@@ -161,7 +162,7 @@ int BN_mod_inverse_odd(BIGNUM *out, int *out_no_inverse, const BIGNUM *a,
 
   if (sign < 0) {
     if (!BN_sub(Y, n, Y)) {
-      return 0;
+      goto err;
     }
   }
   // Now  Y*a  ==  A  (mod |n|).
@@ -169,49 +170,61 @@ int BN_mod_inverse_odd(BIGNUM *out, int *out_no_inverse, const BIGNUM *a,
   // Y*a == 1  (mod |n|)
   if (Y->neg || BN_ucmp(Y, n) >= 0) {
     if (!BN_nnmod(Y, Y, n, ctx)) {
-      return 0;
+      goto err;
     }
   }
   if (!BN_copy(R, Y)) {
-    return 0;
+    goto err;
   }
 
-  return 1;
+  ret = 1;
+
+err:
+  BN_CTX_end(ctx);
+  return ret;
 }
 
 BIGNUM *BN_mod_inverse(BIGNUM *out, const BIGNUM *a, const BIGNUM *n,
                        BN_CTX *ctx) {
-  UniquePtr<BIGNUM> new_out;
-  if (out == nullptr) {
-    new_out.reset(BN_new());
-    if (new_out == nullptr) {
-      return nullptr;
+  BIGNUM *new_out = NULL;
+  if (out == NULL) {
+    new_out = BN_new();
+    if (new_out == NULL) {
+      return NULL;
     }
-    out = new_out.get();
+    out = new_out;
   }
 
-  UniquePtr<BIGNUM> a_reduced;
+  int ok = 0;
+  BIGNUM *a_reduced = NULL;
   if (a->neg || BN_ucmp(a, n) >= 0) {
-    a_reduced.reset(BN_dup(a));
-    if (a_reduced == nullptr) {
-      return nullptr;
+    a_reduced = BN_dup(a);
+    if (a_reduced == NULL) {
+      goto err;
     }
-    if (!BN_nnmod(a_reduced.get(), a_reduced.get(), n, ctx)) {
-      return nullptr;
+    if (!BN_nnmod(a_reduced, a_reduced, n, ctx)) {
+      goto err;
     }
-    a = a_reduced.get();
+    a = a_reduced;
   }
 
   int no_inverse;
   if (!BN_is_odd(n)) {
     if (!bn_mod_inverse_consttime(out, &no_inverse, a, n, ctx)) {
-      return nullptr;
+      goto err;
     }
   } else if (!BN_mod_inverse_odd(out, &no_inverse, a, n, ctx)) {
-    return nullptr;
+    goto err;
   }
 
-  new_out.release();  // Passed to the caller via `out`.
+  ok = 1;
+
+err:
+  if (!ok) {
+    BN_free(new_out);
+    out = NULL;
+  }
+  BN_free(a_reduced);
   return out;
 }
 
@@ -219,7 +232,7 @@ int BN_mod_inverse_blinded(BIGNUM *out, int *out_no_inverse, const BIGNUM *a,
                            const BN_MONT_CTX *mont, BN_CTX *ctx) {
   *out_no_inverse = 0;
 
-  // `a` is secret, but it is required to be in range, so these comparisons may
+  // |a| is secret, but it is required to be in range, so these comparisons may
   // be leaked.
   if (BN_is_negative(a) ||
       constant_time_declassify_int(BN_cmp(a, &mont->N) >= 0)) {
@@ -227,55 +240,61 @@ int BN_mod_inverse_blinded(BIGNUM *out, int *out_no_inverse, const BIGNUM *a,
     return 0;
   }
 
-  UniquePtr<BIGNUM> blinding_factor(BN_new());
-  if (blinding_factor == nullptr) {
-    return 0;
-  }
+  int ret = 0;
+  BIGNUM blinding_factor;
+  BN_init(&blinding_factor);
 
-  // `BN_mod_inverse_odd` is leaky, so generate a secret blinding factor and
-  // blind `a`. This works because (ar)^-1 * r = a^-1, supposing r is
+  // |BN_mod_inverse_odd| is leaky, so generate a secret blinding factor and
+  // blind |a|. This works because (ar)^-1 * r = a^-1, supposing r is
   // invertible. If r is not invertible, this function will fail. However, we
   // only use this in RSA, where stumbling on an uninvertible element means
   // stumbling on the key's factorization. That is, if this function fails, the
   // RSA key was not actually a product of two large primes.
   //
   // TODO(crbug.com/boringssl/677): When the PRNG output is marked secret by
-  // default, the explicit `bn_secret` call can be removed.
-  if (!BN_rand_range_ex(blinding_factor.get(), 1, &mont->N)) {
-    return 0;
+  // default, the explicit |bn_secret| call can be removed.
+  if (!BN_rand_range_ex(&blinding_factor, 1, &mont->N)) {
+    goto err;
   }
-  bn_secret(blinding_factor.get());
-  if (!BN_mod_mul_montgomery(out, blinding_factor.get(), a, mont, ctx)) {
-    return 0;
+  bn_secret(&blinding_factor);
+  if (!BN_mod_mul_montgomery(out, &blinding_factor, a, mont, ctx)) {
+    goto err;
   }
 
-  // Once blinded, `out` is no longer secret, so it may be passed to a leaky
-  // mod inverse function. Note `blinding_factor` is secret, so `out` will be
+  // Once blinded, |out| is no longer secret, so it may be passed to a leaky
+  // mod inverse function. Note |blinding_factor| is secret, so |out| will be
   // secret again after multiplying.
   bn_declassify(out);
   if (!BN_mod_inverse_odd(out, out_no_inverse, out, &mont->N, ctx) ||
-      !BN_mod_mul_montgomery(out, blinding_factor.get(), out, mont, ctx)) {
-    return 0;
+      !BN_mod_mul_montgomery(out, &blinding_factor, out, mont, ctx)) {
+    goto err;
   }
 
-  return 1;
+  ret = 1;
+
+err:
+  BN_free(&blinding_factor);
+  return ret;
 }
 
-int bssl::bn_mod_inverse_prime(BIGNUM *out, const BIGNUM *a, const BIGNUM *p,
-                               BN_CTX *ctx, const BN_MONT_CTX *mont_p) {
-  BN_CTXScope scope(ctx);
+int bn_mod_inverse_prime(BIGNUM *out, const BIGNUM *a, const BIGNUM *p,
+                         BN_CTX *ctx, const BN_MONT_CTX *mont_p) {
+  BN_CTX_start(ctx);
   BIGNUM *p_minus_2 = BN_CTX_get(ctx);
-  return p_minus_2 != nullptr && BN_copy(p_minus_2, p) &&
-         BN_sub_word(p_minus_2, 2) &&
-         BN_mod_exp_mont(out, a, p_minus_2, p, ctx, mont_p);
+  int ok = p_minus_2 != NULL && BN_copy(p_minus_2, p) &&
+           BN_sub_word(p_minus_2, 2) &&
+           BN_mod_exp_mont(out, a, p_minus_2, p, ctx, mont_p);
+  BN_CTX_end(ctx);
+  return ok;
 }
 
-int bssl::bn_mod_inverse_secret_prime(BIGNUM *out, const BIGNUM *a,
-                                      const BIGNUM *p, BN_CTX *ctx,
-                                      const BN_MONT_CTX *mont_p) {
-  BN_CTXScope scope(ctx);
+int bn_mod_inverse_secret_prime(BIGNUM *out, const BIGNUM *a, const BIGNUM *p,
+                                BN_CTX *ctx, const BN_MONT_CTX *mont_p) {
+  BN_CTX_start(ctx);
   BIGNUM *p_minus_2 = BN_CTX_get(ctx);
-  return p_minus_2 != nullptr && BN_copy(p_minus_2, p) &&
-         BN_sub_word(p_minus_2, 2) &&
-         BN_mod_exp_mont_consttime(out, a, p_minus_2, p, ctx, mont_p);
+  int ok = p_minus_2 != NULL && BN_copy(p_minus_2, p) &&
+           BN_sub_word(p_minus_2, 2) &&
+           BN_mod_exp_mont_consttime(out, a, p_minus_2, p, ctx, mont_p);
+  BN_CTX_end(ctx);
+  return ok;
 }

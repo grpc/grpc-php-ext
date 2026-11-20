@@ -25,8 +25,6 @@
 #include "../service_indicator/internal.h"
 
 
-using namespace bssl;
-
 // kDefaultIV is the default IV value given in RFC 3394, 2.2.3.1.
 static const uint8_t kDefaultIV[] = {
     0xa6, 0xa6, 0xa6, 0xa6, 0xa6, 0xa6, 0xa6, 0xa6,
@@ -43,7 +41,7 @@ int AES_wrap_key(const AES_KEY *key, const uint8_t *iv, uint8_t *out,
     return -1;
   }
 
-  if (iv == nullptr) {
+  if (iv == NULL) {
     iv = kDefaultIV;
   }
 
@@ -115,7 +113,7 @@ int AES_unwrap_key(const AES_KEY *key, const uint8_t *iv, uint8_t *out,
     return -1;
   }
 
-  if (iv == nullptr) {
+  if (iv == NULL) {
     iv = kDefaultIV;
   }
   if (CRYPTO_memcmp(calculated_iv, iv, 8) != 0) {
@@ -154,7 +152,7 @@ int AES_wrap_key_padded(const AES_KEY *key, uint8_t *out, size_t *out_len,
   }
 
   uint8_t *padded_in = reinterpret_cast<uint8_t *>(OPENSSL_malloc(padded_len));
-  if (padded_in == nullptr) {
+  if (padded_in == NULL) {
     return 0;
   }
   assert(padded_len >= 8);

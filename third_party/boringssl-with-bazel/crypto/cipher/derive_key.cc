@@ -20,9 +20,12 @@
 #include <openssl/mem.h>
 
 
+#define PKCS5_SALT_LEN 8
+
 int EVP_BytesToKey(const EVP_CIPHER *type, const EVP_MD *md,
-                   const uint8_t salt[8], const uint8_t *data, size_t data_len,
+                   const uint8_t *salt, const uint8_t *data, size_t data_len,
                    unsigned count, uint8_t *key, uint8_t *iv) {
+  EVP_MD_CTX c;
   uint8_t md_buf[EVP_MAX_MD_SIZE];
   unsigned addmd = 0;
   unsigned mds = 0, i;
@@ -34,36 +37,36 @@ int EVP_BytesToKey(const EVP_CIPHER *type, const EVP_MD *md,
   assert(nkey <= EVP_MAX_KEY_LENGTH);
   assert(niv <= EVP_MAX_IV_LENGTH);
 
-  if (data == nullptr) {
+  if (data == NULL) {
     return nkey;
   }
 
-  bssl::ScopedEVP_MD_CTX c;
+  EVP_MD_CTX_init(&c);
   for (;;) {
-    if (!EVP_DigestInit_ex(c.get(), md, nullptr)) {
+    if (!EVP_DigestInit_ex(&c, md, NULL)) {
       goto err;
     }
     if (addmd++) {
-      if (!EVP_DigestUpdate(c.get(), md_buf, mds)) {
+      if (!EVP_DigestUpdate(&c, md_buf, mds)) {
         goto err;
       }
     }
-    if (!EVP_DigestUpdate(c.get(), data, data_len)) {
+    if (!EVP_DigestUpdate(&c, data, data_len)) {
       goto err;
     }
-    if (salt != nullptr) {
-      if (!EVP_DigestUpdate(c.get(), salt, 8)) {
+    if (salt != NULL) {
+      if (!EVP_DigestUpdate(&c, salt, PKCS5_SALT_LEN)) {
         goto err;
       }
     }
-    if (!EVP_DigestFinal_ex(c.get(), md_buf, &mds)) {
+    if (!EVP_DigestFinal_ex(&c, md_buf, &mds)) {
       goto err;
     }
 
     for (i = 1; i < count; i++) {
-      if (!EVP_DigestInit_ex(c.get(), md, nullptr) ||
-          !EVP_DigestUpdate(c.get(), md_buf, mds) ||
-          !EVP_DigestFinal_ex(c.get(), md_buf, &mds)) {
+      if (!EVP_DigestInit_ex(&c, md, NULL) ||
+          !EVP_DigestUpdate(&c, md_buf, mds) ||
+          !EVP_DigestFinal_ex(&c, md_buf, &mds)) {
         goto err;
       }
     }
@@ -74,7 +77,7 @@ int EVP_BytesToKey(const EVP_CIPHER *type, const EVP_MD *md,
         if (nkey == 0 || i == mds) {
           break;
         }
-        if (key != nullptr) {
+        if (key != NULL) {
           *(key++) = md_buf[i];
         }
         nkey--;
@@ -87,7 +90,7 @@ int EVP_BytesToKey(const EVP_CIPHER *type, const EVP_MD *md,
         if (niv == 0 || i == mds) {
           break;
         }
-        if (iv != nullptr) {
+        if (iv != NULL) {
           *(iv++) = md_buf[i];
         }
         niv--;
@@ -101,6 +104,7 @@ int EVP_BytesToKey(const EVP_CIPHER *type, const EVP_MD *md,
   rv = EVP_CIPHER_key_length(type);
 
 err:
+  EVP_MD_CTX_cleanup(&c);
   OPENSSL_cleanse(md_buf, EVP_MAX_MD_SIZE);
   return rv;
 }

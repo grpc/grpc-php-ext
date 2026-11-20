@@ -21,10 +21,8 @@
 #include "../fipsmodule/bn/internal.h"
 
 
-using namespace bssl;
-
 int BN_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx) {
-  BN_CTXScope scope(ctx);
+  bssl::BN_CTXScope scope(ctx);
   BIGNUM *rr;
   if (r == a || r == p) {
     rr = BN_CTX_get(ctx);
@@ -33,17 +31,17 @@ int BN_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx) {
   }
 
   BIGNUM *v = BN_CTX_get(ctx);
-  if (rr == nullptr || v == nullptr) {
+  if (rr == NULL || v == NULL) {
     return 0;
   }
 
-  if (BN_copy(v, a) == nullptr) {
+  if (BN_copy(v, a) == NULL) {
     return 0;
   }
   int bits = BN_num_bits(p);
 
   if (BN_is_odd(p)) {
-    if (BN_copy(rr, a) == nullptr) {
+    if (BN_copy(rr, a) == NULL) {
       return 0;
     }
   } else {
@@ -80,8 +78,8 @@ static int mod_exp_even(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
     return BN_one(r);
   }
 
-  // Make a copy of `a`, in case it aliases `r`.
-  BN_CTXScope scope(ctx);
+  // Make a copy of |a|, in case it aliases |r|.
+  bssl::BN_CTXScope scope(ctx);
   BIGNUM *tmp = BN_CTX_get(ctx);
   if (tmp == nullptr || !BN_copy(tmp, a)) {
     return 0;
@@ -116,7 +114,7 @@ int BN_mod_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, const BIGNUM *m,
   }
 
   if (BN_is_odd(m)) {
-    return BN_mod_exp_mont(r, a, p, m, ctx, nullptr);
+    return BN_mod_exp_mont(r, a, p, m, ctx, NULL);
   }
 
   return mod_exp_even(r, a, p, m, ctx);
@@ -125,44 +123,62 @@ int BN_mod_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, const BIGNUM *m,
 int BN_mod_exp_mont_word(BIGNUM *rr, BN_ULONG a, const BIGNUM *p,
                          const BIGNUM *m, BN_CTX *ctx,
                          const BN_MONT_CTX *mont) {
+  BIGNUM a_bignum;
+  BN_init(&a_bignum);
+
+  int ret = 0;
+
   // BN_mod_exp_mont requires reduced inputs.
   if (bn_minimal_width(m) == 1) {
     a %= m->d[0];
   }
 
-  UniquePtr<BIGNUM> a_bignum(BN_new());
-  if (a_bignum == nullptr || !BN_set_word(a_bignum.get(), a)) {
+  if (!BN_set_word(&a_bignum, a)) {
     OPENSSL_PUT_ERROR(BN, ERR_R_INTERNAL_ERROR);
-    return 0;
+    goto err;
   }
 
-  return BN_mod_exp_mont(rr, a_bignum.get(), p, m, ctx, mont);
+  ret = BN_mod_exp_mont(rr, &a_bignum, p, m, ctx, mont);
+
+err:
+  BN_free(&a_bignum);
+
+  return ret;
 }
 
 int BN_mod_exp2_mont(BIGNUM *rr, const BIGNUM *a1, const BIGNUM *p1,
                      const BIGNUM *a2, const BIGNUM *p2, const BIGNUM *m,
                      BN_CTX *ctx, const BN_MONT_CTX *mont) {
+  BIGNUM tmp;
+  BN_init(&tmp);
+
+  int ret = 0;
+  BN_MONT_CTX *new_mont = NULL;
+
   // Allocate a montgomery context if it was not supplied by the caller.
-  UniquePtr<BN_MONT_CTX> new_mont;
-  if (mont == nullptr) {
-    new_mont.reset(BN_MONT_CTX_new_for_modulus(m, ctx));
-    if (new_mont == nullptr) {
-      return 0;
+  if (mont == NULL) {
+    new_mont = BN_MONT_CTX_new_for_modulus(m, ctx);
+    if (new_mont == NULL) {
+      goto err;
     }
-    mont = new_mont.get();
+    mont = new_mont;
   }
 
   // BN_mod_mul_montgomery removes one Montgomery factor, so passing one
   // Montgomery-encoded and one non-Montgomery-encoded value gives a
   // non-Montgomery-encoded result.
-  UniquePtr<BIGNUM> tmp(BN_new());
-  if (tmp == nullptr ||  //
-      !BN_mod_exp_mont(rr, a1, p1, m, ctx, mont) ||
-      !BN_mod_exp_mont(tmp.get(), a2, p2, m, ctx, mont) ||
+  if (!BN_mod_exp_mont(rr, a1, p1, m, ctx, mont) ||
+      !BN_mod_exp_mont(&tmp, a2, p2, m, ctx, mont) ||
       !BN_to_montgomery(rr, rr, mont, ctx) ||
-      !BN_mod_mul_montgomery(rr, rr, tmp.get(), mont, ctx)) {
-    return 0;
+      !BN_mod_mul_montgomery(rr, rr, &tmp, mont, ctx)) {
+    goto err;
   }
 
-  return 1;
+  ret = 1;
+
+err:
+  BN_MONT_CTX_free(new_mont);
+  BN_free(&tmp);
+
+  return ret;
 }

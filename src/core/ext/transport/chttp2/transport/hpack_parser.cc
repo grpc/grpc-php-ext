@@ -1024,9 +1024,7 @@ class HPackParser::Parser {
         key_string.size() + value.wire_size + hpack_constants::kEntryOverhead;
     if (state_.mitigation_engine != nullptr) {
       auto action = state_.mitigation_engine->EvaluateIncomingMetadata(
-          key_string, value_slice.as_string_view(),
-          MitigationEngine::EvaluateArgs(
-              state_.peer_address, /*endpoint=*/nullptr, state_.auth_context));
+          key_string, value_slice.as_string_view(), state_.peer_address);
       if (action.has_value()) {
         if (action.value() == MitigationEngine::Action::kCloseConnection) {
           input_->SetErrorAndStopParsing(
@@ -1130,11 +1128,13 @@ HPackParser::HPackParser() = default;
 
 HPackParser::~HPackParser() = default;
 
-void HPackParser::BeginFrame(
-    grpc_metadata_batch* metadata_buffer, uint32_t metadata_size_soft_limit,
-    uint32_t metadata_size_hard_limit, Boundary boundary, Priority priority,
-    LogInfo log_info, MitigationEngine* mitigation_engine,
-    absl::string_view peer_address, grpc_auth_context* auth_context) {
+void HPackParser::BeginFrame(grpc_metadata_batch* metadata_buffer,
+                             uint32_t metadata_size_soft_limit,
+                             uint32_t metadata_size_hard_limit,
+                             Boundary boundary, Priority priority,
+                             LogInfo log_info,
+                             MitigationEngine* mitigation_engine,
+                             absl::string_view peer_address) {
   metadata_buffer_ = metadata_buffer;
   if (metadata_buffer != nullptr) {
     metadata_buffer->Set(GrpcStatusFromWire(), true);
@@ -1143,7 +1143,6 @@ void HPackParser::BeginFrame(
   priority_ = priority;
   state_.mitigation_engine = mitigation_engine;
   state_.peer_address = peer_address;
-  state_.auth_context = auth_context;
   state_.dynamic_table_updates_allowed = 2;
   state_.metadata_early_detection.SetLimits(
       /*soft_limit=*/metadata_size_soft_limit,
@@ -1198,9 +1197,7 @@ grpc_error_handle HPackParser::ParseInput(Input input, bool is_last,
     }
     if (state_.mitigation_engine != nullptr && metadata_buffer_ != nullptr) {
       auto action = state_.mitigation_engine->EvaluateAllIncomingMetadata(
-          *metadata_buffer_,
-          MitigationEngine::EvaluateArgs(
-              state_.peer_address, /*endpoint=*/nullptr, state_.auth_context));
+          *metadata_buffer_, state_.peer_address);
       if (action.has_value()) {
         if (action.value() == MitigationEngine::Action::kCloseConnection) {
           input.SetErrorAndStopParsing(HpackParseResult::MitigationEngineError(

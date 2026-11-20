@@ -31,14 +31,12 @@
 #include <sys/random.h>
 #endif
 
-using namespace bssl;
+void CRYPTO_init_sysrand(void) {}
 
-void bssl::CRYPTO_init_sysrand() {}
-
-// CRYPTO_sysrand puts `requested` random bytes into `out`.
-void bssl::CRYPTO_sysrand(uint8_t *out, size_t requested) {
+// CRYPTO_sysrand puts |requested| random bytes into |out|.
+void CRYPTO_sysrand(uint8_t *out, size_t requested) {
   while (requested > 0) {
-    // `getentropy` can only request 256 bytes at a time.
+    // |getentropy| can only request 256 bytes at a time.
     size_t todo = requested <= 256 ? requested : 256;
     if (getentropy(out, todo) != 0) {
       perror("getentropy() failed");
@@ -48,6 +46,15 @@ void bssl::CRYPTO_sysrand(uint8_t *out, size_t requested) {
     out += todo;
     requested -= todo;
   }
+}
+
+int CRYPTO_sysrand_if_available(uint8_t *buf, size_t len) {
+  CRYPTO_sysrand(buf, len);
+  return 1;
+}
+
+void CRYPTO_sysrand_for_seed(uint8_t *out, size_t requested) {
+  CRYPTO_sysrand(out, requested);
 }
 
 #endif  // OPENSSL_RAND_GETENTROPY

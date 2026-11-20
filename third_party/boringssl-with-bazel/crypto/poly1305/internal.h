@@ -18,8 +18,9 @@
 #include <openssl/base.h>
 #include <openssl/poly1305.h>
 
-
-BSSL_NAMESPACE_BEGIN
+#if defined(__cplusplus)
+extern "C" {
+#endif
 
 #if defined(OPENSSL_ARM) && !defined(OPENSSL_NO_ASM) && !defined(OPENSSL_APPLE)
 #define OPENSSL_POLY1305_NEON
@@ -32,6 +33,9 @@ void CRYPTO_poly1305_update_neon(poly1305_state *state, const uint8_t *in,
 void CRYPTO_poly1305_finish_neon(poly1305_state *state, uint8_t mac[16]);
 #endif
 
-BSSL_NAMESPACE_END
+
+#if defined(__cplusplus)
+}  // extern C
+#endif
 
 #endif  // OPENSSL_HEADER_CRYPTO_POLY1305_INTERNAL_H

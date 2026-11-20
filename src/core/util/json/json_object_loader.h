@@ -15,6 +15,8 @@
 #ifndef GRPC_SRC_CORE_UTIL_JSON_JSON_OBJECT_LOADER_H
 #define GRPC_SRC_CORE_UTIL_JSON_JSON_OBJECT_LOADER_H
 
+#include <grpc/support/port_platform.h>
+
 #include <cstdint>
 #include <cstring>
 #include <map>
@@ -27,7 +29,6 @@
 #include "src/core/util/json/json_args.h"
 #include "src/core/util/no_destruct.h"
 #include "src/core/util/ref_counted_ptr.h"
-#include "src/core/util/ref_counted_string.h"
 #include "src/core/util/time.h"
 #include "src/core/util/validation_errors.h"
 #include "absl/meta/type_traits.h"
@@ -107,17 +108,6 @@ class LoadScalar : public LoaderInterface {
 class LoadString : public LoadScalar {
  protected:
   ~LoadString() = default;
-
- private:
-  bool IsNumber() const override;
-  void LoadInto(const std::string& value, void* dst,
-                ValidationErrors* errors) const override;
-};
-
-// Load a ref-counted string.
-class LoadRefCountedString : public LoadScalar {
- protected:
-  ~LoadRefCountedString() = default;
 
  private:
   bool IsNumber() const override;
@@ -299,11 +289,6 @@ class AutoLoader final : public LoaderInterface {
 // Specializations of AutoLoader for basic types.
 template <>
 class AutoLoader<std::string> final : public LoadString {
- private:
-  ~AutoLoader() = default;
-};
-template <>
-class AutoLoader<RefCountedStringValue> final : public LoadRefCountedString {
  private:
   ~AutoLoader() = default;
 };

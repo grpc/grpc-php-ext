@@ -24,29 +24,26 @@
 #include <openssl/bio.h>
 #include <openssl/bytestring.h>
 #include <openssl/mem.h>
-#include <openssl/span.h>
 
 #include "../bytestring/internal.h"
 #include "../internal.h"
 #include "internal.h"
 
 
-using namespace bssl;
-
 #define ESC_FLAGS                                                           \
   (ASN1_STRFLGS_ESC_2253 | ASN1_STRFLGS_ESC_QUOTE | ASN1_STRFLGS_ESC_CTRL | \
    ASN1_STRFLGS_ESC_MSB)
 
 static int maybe_write(BIO *out, const void *buf, int len) {
-  // If `out` is NULL, ignore the output but report the length.
-  return out == nullptr || BIO_write(out, buf, len) == len;
+  // If |out| is NULL, ignore the output but report the length.
+  return out == NULL || BIO_write(out, buf, len) == len;
 }
 
 static int is_control_character(unsigned char c) { return c < 32 || c == 127; }
 
 static int do_esc_char(uint32_t c, unsigned long flags, char *do_quotes,
                        BIO *out, int is_first, int is_last) {
-  // `c` is a `uint32_t` because, depending on `ASN1_STRFLGS_UTF8_CONVERT`,
+  // |c| is a |uint32_t| because, depending on |ASN1_STRFLGS_UTF8_CONVERT|,
   // we may be escaping bytes or Unicode codepoints.
   char buf[16];  // Large enough for "\\W01234567".
   unsigned char u8 = (unsigned char)c;
@@ -68,7 +65,7 @@ static int do_esc_char(uint32_t c, unsigned long flags, char *do_quotes,
                (is_last && (c == ' '))) {
       if (flags & ASN1_STRFLGS_ESC_QUOTE) {
         // No need to escape, just tell the caller to quote.
-        if (do_quotes != nullptr) {
+        if (do_quotes != NULL) {
           *do_quotes = 1;
         }
         return maybe_write(out, &u8, 1) ? 1 : -1;
@@ -136,7 +133,7 @@ static int do_buf(const unsigned char *buf, int buflen, int encoding,
       CBB_init_fixed(&utf8_cbb, utf8_buf, sizeof(utf8_buf));
       if (!CBB_add_utf8(&utf8_cbb, c)) {
         OPENSSL_PUT_ERROR(ASN1, ERR_R_INTERNAL_ERROR);
-        return -1;
+        return 1;
       }
       size_t utf8_len = CBB_len(&utf8_cbb);
       for (size_t i = 0; i < utf8_len; i++) {
@@ -158,22 +155,25 @@ static int do_buf(const unsigned char *buf, int buflen, int encoding,
   return outlen;
 }
 
-static int do_hex_dump(BIO *out, Span<const uint8_t> in) {
-  if (in.size() > INT_MAX / 2) {
-    return -1;
-  }
+// This function hex dumps a buffer of characters
+
+static int do_hex_dump(BIO *out, unsigned char *buf, int buflen) {
+  static const char hexdig[] = "0123456789ABCDEF";
+  unsigned char *p, *q;
+  char hextmp[2];
   if (out) {
-    static const char kHexDigit[] = "0123456789ABCDEF";
-    for (uint8_t b : in) {
-      char hextmp[2];
-      hextmp[0] = kHexDigit[b >> 4];
-      hextmp[1] = kHexDigit[b & 0xf];
+    p = buf;
+    q = buf + buflen;
+    while (p != q) {
+      hextmp[0] = hexdig[*p >> 4];
+      hextmp[1] = hexdig[*p & 0xf];
       if (!maybe_write(out, hextmp, 2)) {
         return -1;
       }
+      p++;
     }
   }
-  return static_cast<int>(in.size() * 2);
+  return buflen << 1;
 }
 
 // "dump" a string. This is done when the type is unknown, or the flags
@@ -187,33 +187,37 @@ static int do_dump(unsigned long flags, BIO *out, const ASN1_STRING *str) {
 
   // If we don't dump DER encoding just dump content octets
   if (!(flags & ASN1_STRFLGS_DUMP_DER)) {
-    int outlen = do_hex_dump(out, Span(str->data, str->length));
+    int outlen = do_hex_dump(out, str->data, str->length);
     if (outlen < 0) {
       return -1;
     }
     return outlen + 1;
   }
 
-  ScopedCBB cbb;
-  // Roughly estimate the encoded size with `str->length` to reduce unnecessary
-  // reallocations. (Tag, length, miscellaneous type-dependent overhead.)
-  if (!CBB_init(cbb.get(), 4 + str->length) ||
-      !asn1_marshal_any_string(cbb.get(), str)) {
+  // Placing the ASN1_STRING in a temporary ASN1_TYPE allows the DER encoding
+  // to readily obtained.
+  ASN1_TYPE t;
+  OPENSSL_memset(&t, 0, sizeof(ASN1_TYPE));
+  asn1_type_set0_string(&t, (ASN1_STRING *)str);
+  unsigned char *der_buf = NULL;
+  int der_len = i2d_ASN1_TYPE(&t, &der_buf);
+  if (der_len < 0) {
     return -1;
   }
-  int outlen = do_hex_dump(out, CBBAsSpan(cbb.get()));
+  int outlen = do_hex_dump(out, der_buf, der_len);
+  OPENSSL_free(der_buf);
   if (outlen < 0) {
     return -1;
   }
   return outlen + 1;
 }
 
-// string_type_to_encoding returns the `MBSTRING_*` constant for the encoding
-// used by the `ASN1_STRING` type `type`, or -1 if `tag` is not a string
+// string_type_to_encoding returns the |MBSTRING_*| constant for the encoding
+// used by the |ASN1_STRING| type |type|, or -1 if |tag| is not a string
 // type.
 static int string_type_to_encoding(int type) {
   // This function is sometimes passed ASN.1 universal types and sometimes
-  // passed `ASN1_STRING` type values
+  // passed |ASN1_STRING| type values
   switch (type) {
     case V_ASN1_UTF8STRING:
       return MBSTRING_UTF8;
@@ -224,7 +228,7 @@ static int string_type_to_encoding(int type) {
     case V_ASN1_UTCTIME:
     case V_ASN1_GENERALIZEDTIME:
     case V_ASN1_ISO64STRING:
-      // `MBSTRING_ASC` refers to Latin-1, not ASCII.
+      // |MBSTRING_ASC| refers to Latin-1, not ASCII.
       return MBSTRING_ASC;
     case V_ASN1_UNIVERSALSTRING:
       return MBSTRING_UNIV;
@@ -251,7 +255,7 @@ int ASN1_STRING_print_ex(BIO *out, const ASN1_STRING *str,
     outlen++;
   }
 
-  // Decide what to do with `str`, either dump the contents or display it.
+  // Decide what to do with |str|, either dump the contents or display it.
   int encoding;
   if (flags & ASN1_STRFLGS_DUMP_ALL) {
     // Dump everything.
@@ -277,7 +281,7 @@ int ASN1_STRING_print_ex(BIO *out, const ASN1_STRING *str,
 
   // Measure the length.
   char quotes = 0;
-  int len = do_buf(str->data, str->length, encoding, flags, &quotes, nullptr);
+  int len = do_buf(str->data, str->length, encoding, flags, &quotes, NULL);
   if (len < 0) {
     return -1;
   }
@@ -291,7 +295,7 @@ int ASN1_STRING_print_ex(BIO *out, const ASN1_STRING *str,
 
   // Encode the value.
   if ((quotes && !maybe_write(out, "\"", 1)) ||
-      do_buf(str->data, str->length, encoding, flags, nullptr, out) < 0 ||
+      do_buf(str->data, str->length, encoding, flags, NULL, out) < 0 ||
       (quotes && !maybe_write(out, "\"", 1))) {
     return -1;
   }
@@ -300,12 +304,12 @@ int ASN1_STRING_print_ex(BIO *out, const ASN1_STRING *str,
 
 int ASN1_STRING_print_ex_fp(FILE *fp, const ASN1_STRING *str,
                             unsigned long flags) {
-  BIO *bio = nullptr;
-  if (fp != nullptr) {
-    // If `fp` is NULL, this function returns the number of bytes without
+  BIO *bio = NULL;
+  if (fp != NULL) {
+    // If |fp| is NULL, this function returns the number of bytes without
     // writing.
     bio = BIO_new_fp(fp, BIO_NOCLOSE);
-    if (bio == nullptr) {
+    if (bio == NULL) {
       return -1;
     }
   }
@@ -324,7 +328,7 @@ int ASN1_STRING_to_UTF8(unsigned char **out, const ASN1_STRING *in) {
     return -1;
   }
   ASN1_STRING stmp, *str = &stmp;
-  stmp.data = nullptr;
+  stmp.data = NULL;
   stmp.length = 0;
   stmp.flags = 0;
   int ret =
@@ -341,7 +345,7 @@ int ASN1_STRING_print(BIO *bp, const ASN1_STRING *v) {
   char buf[80];
   const char *p;
 
-  if (v == nullptr) {
+  if (v == NULL) {
     return 0;
   }
   n = 0;

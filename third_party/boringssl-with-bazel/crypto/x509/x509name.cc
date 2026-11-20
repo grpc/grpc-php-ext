@@ -26,14 +26,12 @@
 #include "internal.h"
 
 
-using namespace bssl;
-
 int X509_NAME_get_text_by_NID(const X509_NAME *name, int nid, char *buf,
                               int len) {
   const ASN1_OBJECT *obj;
 
   obj = OBJ_nid2obj(nid);
-  if (obj == nullptr) {
+  if (obj == NULL) {
     return -1;
   }
   return (X509_NAME_get_text_by_OBJ(name, obj, buf, len));
@@ -47,7 +45,7 @@ int X509_NAME_get_text_by_OBJ(const X509_NAME *name, const ASN1_OBJECT *obj,
   }
   const ASN1_STRING *data =
       X509_NAME_ENTRY_get_data(X509_NAME_get_entry(name, i));
-  unsigned char *text = nullptr;
+  unsigned char *text = NULL;
   int ret = -1;
   int text_len = ASN1_STRING_to_UTF8(&text, data);
   // Fail if we could not encode as UTF-8.
@@ -56,13 +54,13 @@ int X509_NAME_get_text_by_OBJ(const X509_NAME *name, const ASN1_OBJECT *obj,
   }
   CBS cbs;
   CBS_init(&cbs, text, text_len);
-  // Fail if the UTF-8 encoding contains a 0 byte because this is returned as a
-  // C string and callers very often do not check.
+  // Fail if the UTF-8 encoding constains a 0 byte because this is
+  // returned as a C string and callers very often do not check.
   if (CBS_contains_zero_byte(&cbs)) {
     goto out;
   }
   // We still support the "pass NULL to find out how much" API
-  if (buf != nullptr) {
+  if (buf != NULL) {
     if (text_len >= len || len <= 0 ||
         !CBS_copy_bytes(&cbs, (uint8_t *)buf, text_len)) {
       goto out;
@@ -78,34 +76,32 @@ out:
 }
 
 int X509_NAME_entry_count(const X509_NAME *name) {
-  if (name == nullptr) {
+  if (name == NULL) {
     return 0;
   }
-  const auto *impl = FromOpaque(name);
-  return (int)sk_X509_NAME_ENTRY_num(impl->entries);
+  return (int)sk_X509_NAME_ENTRY_num(name->entries);
 }
 
 int X509_NAME_get_index_by_NID(const X509_NAME *name, int nid, int lastpos) {
   const ASN1_OBJECT *obj;
 
   obj = OBJ_nid2obj(nid);
-  if (obj == nullptr) {
+  if (obj == NULL) {
     return -2;
   }
   return X509_NAME_get_index_by_OBJ(name, obj, lastpos);
 }
 
-// NOTE: you should be passing -1, not 0 as lastpos
+// NOTE: you should be passsing -1, not 0 as lastpos
 int X509_NAME_get_index_by_OBJ(const X509_NAME *name, const ASN1_OBJECT *obj,
                                int lastpos) {
-  if (name == nullptr) {
+  if (name == NULL) {
     return -1;
   }
-  const auto *impl = FromOpaque(name);
   if (lastpos < 0) {
     lastpos = -1;
   }
-  const STACK_OF(X509_NAME_ENTRY) *sk = impl->entries;
+  const STACK_OF(X509_NAME_ENTRY) *sk = name->entries;
   int n = (int)sk_X509_NAME_ENTRY_num(sk);
   for (lastpos++; lastpos < n; lastpos++) {
     const X509_NAME_ENTRY *ne = sk_X509_NAME_ENTRY_value(sk, lastpos);
@@ -117,30 +113,24 @@ int X509_NAME_get_index_by_OBJ(const X509_NAME *name, const ASN1_OBJECT *obj,
 }
 
 X509_NAME_ENTRY *X509_NAME_get_entry(const X509_NAME *name, int loc) {
-  if (name == nullptr) {
-    return nullptr;
-  }
-  const auto *impl = FromOpaque(name);
-  if (loc < 0 || sk_X509_NAME_ENTRY_num(impl->entries) <= (size_t)loc) {
-    return nullptr;
+  if (name == NULL || loc < 0 ||
+      sk_X509_NAME_ENTRY_num(name->entries) <= (size_t)loc) {
+    return NULL;
   } else {
-    return (sk_X509_NAME_ENTRY_value(impl->entries, loc));
+    return (sk_X509_NAME_ENTRY_value(name->entries, loc));
   }
 }
 
 X509_NAME_ENTRY *X509_NAME_delete_entry(X509_NAME *name, int loc) {
-  if (name == nullptr) {
-    return nullptr;
-  }
-  const auto *impl = FromOpaque(name);
-  if (loc < 0 || sk_X509_NAME_ENTRY_num(impl->entries) <= (size_t)loc) {
-    return nullptr;
+  if (name == NULL || loc < 0 ||
+      sk_X509_NAME_ENTRY_num(name->entries) <= (size_t)loc) {
+    return NULL;
   }
 
-  STACK_OF(X509_NAME_ENTRY) *sk = impl->entries;
+  STACK_OF(X509_NAME_ENTRY) *sk = name->entries;
   X509_NAME_ENTRY *ret = sk_X509_NAME_ENTRY_delete(sk, loc);
   size_t n = sk_X509_NAME_ENTRY_num(sk);
-  x509_name_invalidate_cache(name);
+  name->modified = 1;
   if ((size_t)loc == n) {
     return ret;
   }
@@ -167,7 +157,7 @@ int X509_NAME_add_entry_by_OBJ(X509_NAME *name, const ASN1_OBJECT *obj,
                                int type, const unsigned char *bytes,
                                ossl_ssize_t len, int loc, int set) {
   X509_NAME_ENTRY *ne =
-      X509_NAME_ENTRY_create_by_OBJ(nullptr, obj, type, bytes, len);
+      X509_NAME_ENTRY_create_by_OBJ(NULL, obj, type, bytes, len);
   if (!ne) {
     return 0;
   }
@@ -180,7 +170,7 @@ int X509_NAME_add_entry_by_NID(X509_NAME *name, int nid, int type,
                                const unsigned char *bytes, ossl_ssize_t len,
                                int loc, int set) {
   X509_NAME_ENTRY *ne =
-      X509_NAME_ENTRY_create_by_NID(nullptr, nid, type, bytes, len);
+      X509_NAME_ENTRY_create_by_NID(NULL, nid, type, bytes, len);
   if (!ne) {
     return 0;
   }
@@ -193,7 +183,7 @@ int X509_NAME_add_entry_by_txt(X509_NAME *name, const char *field, int type,
                                const unsigned char *bytes, ossl_ssize_t len,
                                int loc, int set) {
   X509_NAME_ENTRY *ne =
-      X509_NAME_ENTRY_create_by_txt(nullptr, field, type, bytes, len);
+      X509_NAME_ENTRY_create_by_txt(NULL, field, type, bytes, len);
   if (!ne) {
     return 0;
   }
@@ -206,18 +196,14 @@ int X509_NAME_add_entry_by_txt(X509_NAME *name, const char *field, int type,
 // guy we are about to stomp on.
 int X509_NAME_add_entry(X509_NAME *name, const X509_NAME_ENTRY *entry, int loc,
                         int set) {
-  if (name == nullptr) {
+  X509_NAME_ENTRY *new_name = NULL;
+  int i, inc;
+  STACK_OF(X509_NAME_ENTRY) *sk;
+
+  if (name == NULL) {
     return 0;
   }
-  auto *impl = FromOpaque(name);
-  if (impl->entries == nullptr) {
-    impl->entries = sk_X509_NAME_ENTRY_new_null();
-    if (impl->entries == nullptr) {
-      return 0;
-    }
-  }
-
-  STACK_OF(X509_NAME_ENTRY) *sk = impl->entries;
+  sk = name->entries;
   int n = (int)sk_X509_NAME_ENTRY_num(sk);
   if (loc > n) {
     loc = n;
@@ -225,8 +211,8 @@ int X509_NAME_add_entry(X509_NAME *name, const X509_NAME_ENTRY *entry, int loc,
     loc = n;
   }
 
-  bool inc = set == 0;
-  x509_name_invalidate_cache(name);
+  inc = (set == 0);
+  name->modified = 1;
 
   if (set == -1) {
     if (loc == 0) {
@@ -236,6 +222,7 @@ int X509_NAME_add_entry(X509_NAME *name, const X509_NAME_ENTRY *entry, int loc,
       set = sk_X509_NAME_ENTRY_value(sk, loc - 1)->set;
     }
   } else {  // if (set >= 0)
+
     if (loc >= n) {
       if (loc != 0) {
         set = sk_X509_NAME_ENTRY_value(sk, loc - 1)->set + 1;
@@ -247,22 +234,25 @@ int X509_NAME_add_entry(X509_NAME *name, const X509_NAME_ENTRY *entry, int loc,
     }
   }
 
-  UniquePtr<X509_NAME_ENTRY> new_entry(X509_NAME_ENTRY_dup(entry));
-  if (new_entry == nullptr) {
-    return 0;
+  if ((new_name = X509_NAME_ENTRY_dup(entry)) == NULL) {
+    goto err;
   }
-  new_entry->set = set;
-  if (!sk_X509_NAME_ENTRY_insert(sk, new_entry.get(), loc)) {
-    return 0;
+  new_name->set = set;
+  if (!sk_X509_NAME_ENTRY_insert(sk, new_name, loc)) {
+    goto err;
   }
-  new_entry.release(); // `sk` took ownership.
   if (inc) {
     n = (int)sk_X509_NAME_ENTRY_num(sk);
-    for (int i = loc + 1; i < n; i++) {
+    for (i = loc + 1; i < n; i++) {
       sk_X509_NAME_ENTRY_value(sk, i)->set += 1;
     }
   }
   return 1;
+err:
+  if (new_name != NULL) {
+    X509_NAME_ENTRY_free(new_name);
+  }
+  return 0;
 }
 
 X509_NAME_ENTRY *X509_NAME_ENTRY_create_by_txt(X509_NAME_ENTRY **ne,
@@ -273,10 +263,10 @@ X509_NAME_ENTRY *X509_NAME_ENTRY_create_by_txt(X509_NAME_ENTRY **ne,
   X509_NAME_ENTRY *nentry;
 
   obj = OBJ_txt2obj(field, 0);
-  if (obj == nullptr) {
+  if (obj == NULL) {
     OPENSSL_PUT_ERROR(X509, X509_R_INVALID_FIELD_NAME);
     ERR_add_error_data(2, "name=", field);
-    return nullptr;
+    return NULL;
   }
   nentry = X509_NAME_ENTRY_create_by_OBJ(ne, obj, type, bytes, len);
   ASN1_OBJECT_free(obj);
@@ -288,9 +278,9 @@ X509_NAME_ENTRY *X509_NAME_ENTRY_create_by_NID(X509_NAME_ENTRY **ne, int nid,
                                                const unsigned char *bytes,
                                                ossl_ssize_t len) {
   const ASN1_OBJECT *obj = OBJ_nid2obj(nid);
-  if (obj == nullptr) {
+  if (obj == NULL) {
     OPENSSL_PUT_ERROR(X509, X509_R_UNKNOWN_NID);
-    return nullptr;
+    return NULL;
   }
   return X509_NAME_ENTRY_create_by_OBJ(ne, obj, type, bytes, len);
 }
@@ -301,9 +291,9 @@ X509_NAME_ENTRY *X509_NAME_ENTRY_create_by_OBJ(X509_NAME_ENTRY **ne,
                                                ossl_ssize_t len) {
   X509_NAME_ENTRY *ret;
 
-  if ((ne == nullptr) || (*ne == nullptr)) {
-    if ((ret = X509_NAME_ENTRY_new()) == nullptr) {
-      return nullptr;
+  if ((ne == NULL) || (*ne == NULL)) {
+    if ((ret = X509_NAME_ENTRY_new()) == NULL) {
+      return NULL;
     }
   } else {
     ret = *ne;
@@ -316,60 +306,60 @@ X509_NAME_ENTRY *X509_NAME_ENTRY_create_by_OBJ(X509_NAME_ENTRY **ne,
     goto err;
   }
 
-  if ((ne != nullptr) && (*ne == nullptr)) {
+  if ((ne != NULL) && (*ne == NULL)) {
     *ne = ret;
   }
   return ret;
 err:
-  if ((ne == nullptr) || (ret != *ne)) {
+  if ((ne == NULL) || (ret != *ne)) {
     X509_NAME_ENTRY_free(ret);
   }
-  return nullptr;
+  return NULL;
 }
 
 int X509_NAME_ENTRY_set_object(X509_NAME_ENTRY *ne, const ASN1_OBJECT *obj) {
-  if ((ne == nullptr) || (obj == nullptr)) {
+  if ((ne == NULL) || (obj == NULL)) {
     OPENSSL_PUT_ERROR(X509, ERR_R_PASSED_NULL_PARAMETER);
     return 0;
   }
   ASN1_OBJECT_free(ne->object);
   ne->object = OBJ_dup(obj);
-  return ((ne->object == nullptr) ? 0 : 1);
+  return ((ne->object == NULL) ? 0 : 1);
 }
 
 int X509_NAME_ENTRY_set_data(X509_NAME_ENTRY *ne, int type,
                              const unsigned char *bytes, ossl_ssize_t len) {
-  if ((ne == nullptr) || ((bytes == nullptr) && (len != 0))) {
+  if ((ne == NULL) || ((bytes == NULL) && (len != 0))) {
     return 0;
   }
   if ((type > 0) && (type & MBSTRING_FLAG)) {
-    ASN1_STRING *dst = &ne->value;
-    return ASN1_STRING_set_by_NID(&dst, bytes, len, type,
-                                  OBJ_obj2nid(ne->object)) != nullptr;
+    return ASN1_STRING_set_by_NID(&ne->value, bytes, len, type,
+                                  OBJ_obj2nid(ne->object))
+               ? 1
+               : 0;
   }
   if (len < 0) {
     len = strlen((const char *)bytes);
   }
-  if (!ASN1_STRING_set(&ne->value, bytes, len)) {
+  if (!ASN1_STRING_set(ne->value, bytes, len)) {
     return 0;
   }
   if (type != V_ASN1_UNDEF) {
-    ne->value.type = type;
+    ne->value->type = type;
   }
   return 1;
 }
 
 ASN1_OBJECT *X509_NAME_ENTRY_get_object(const X509_NAME_ENTRY *ne) {
-  if (ne == nullptr) {
-    return nullptr;
+  if (ne == NULL) {
+    return NULL;
   }
   return ne->object;
 }
 
 ASN1_STRING *X509_NAME_ENTRY_get_data(const X509_NAME_ENTRY *ne) {
-  if (ne == nullptr) {
-    return nullptr;
+  if (ne == NULL) {
+    return NULL;
   }
-  // This function is not const-correct for OpenSSL compatibility.
-  return const_cast<ASN1_STRING*>(&ne->value);
+  return ne->value;
 }

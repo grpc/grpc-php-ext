@@ -21,11 +21,8 @@
 #include <openssl/mem.h>
 
 #include "../../internal.h"
-#include "../../mem_internal.h"
 #include "../service_indicator/internal.h"
 
-
-using namespace bssl;
 
 uint8_t *HMAC(const EVP_MD *evp_md, const void *key, size_t key_len,
               const uint8_t *data, size_t data_len, uint8_t *out,
@@ -36,7 +33,7 @@ uint8_t *HMAC(const EVP_MD *evp_md, const void *key, size_t key_len,
   // The underlying hash functions should not set the FIPS service indicator
   // until all operations have completed.
   FIPS_service_indicator_lock_state();
-  const int ok = HMAC_Init_ex(&ctx, key, key_len, evp_md, nullptr) &&
+  const int ok = HMAC_Init_ex(&ctx, key, key_len, evp_md, NULL) &&
                  HMAC_Update(&ctx, data, data_len) &&
                  HMAC_Final(&ctx, out, out_len);
   FIPS_service_indicator_unlock_state();
@@ -44,7 +41,7 @@ uint8_t *HMAC(const EVP_MD *evp_md, const void *key, size_t key_len,
   HMAC_CTX_cleanup(&ctx);
 
   if (!ok) {
-    return nullptr;
+    return NULL;
   }
 
   HMAC_verify_service_indicator(evp_md);
@@ -52,15 +49,16 @@ uint8_t *HMAC(const EVP_MD *evp_md, const void *key, size_t key_len,
 }
 
 void HMAC_CTX_init(HMAC_CTX *ctx) {
-  ctx->md = nullptr;
+  ctx->md = NULL;
   EVP_MD_CTX_init(&ctx->i_ctx);
   EVP_MD_CTX_init(&ctx->o_ctx);
   EVP_MD_CTX_init(&ctx->md_ctx);
 }
 
-HMAC_CTX *HMAC_CTX_new() {
-  HMAC_CTX *ctx = New<HMAC_CTX>();
-  if (ctx != nullptr) {
+HMAC_CTX *HMAC_CTX_new(void) {
+  HMAC_CTX *ctx =
+      reinterpret_cast<HMAC_CTX *>(OPENSSL_malloc(sizeof(HMAC_CTX)));
+  if (ctx != NULL) {
     HMAC_CTX_init(ctx);
   }
   return ctx;
@@ -81,12 +79,12 @@ void HMAC_CTX_cleanse(HMAC_CTX *ctx) {
 }
 
 void HMAC_CTX_free(HMAC_CTX *ctx) {
-  if (ctx == nullptr) {
+  if (ctx == NULL) {
     return;
   }
 
   HMAC_CTX_cleanup(ctx);
-  Delete(ctx);
+  OPENSSL_free(ctx);
 }
 
 int HMAC_Init_ex(HMAC_CTX *ctx, const void *key, size_t key_len,
@@ -94,18 +92,18 @@ int HMAC_Init_ex(HMAC_CTX *ctx, const void *key, size_t key_len,
   int ret = 0;
   FIPS_service_indicator_lock_state();
 
-  if (md == nullptr) {
+  if (md == NULL) {
     md = ctx->md;
   }
 
-  // If either `key` is non-NULL or `md` has changed, initialize with a new key
+  // If either |key| is non-NULL or |md| has changed, initialize with a new key
   // rather than rewinding the previous one.
   //
-  // TODO(davidben,eroman): Passing the previous `md` with a NULL `key` is
+  // TODO(davidben,eroman): Passing the previous |md| with a NULL |key| is
   // ambiguous between using the empty key and reusing the previous key. There
   // exist callers which intend the latter, but the former is an awkward edge
   // case. Fix to API to avoid this.
-  if (md != ctx->md || key != nullptr) {
+  if (md != ctx->md || key != NULL) {
     uint8_t pad[EVP_MAX_MD_BLOCK_SIZE];
     uint8_t key_block[EVP_MAX_MD_BLOCK_SIZE];
     unsigned key_block_len;
@@ -165,11 +163,12 @@ int HMAC_Final(HMAC_CTX *ctx, uint8_t *out, unsigned int *out_len) {
 
   FIPS_service_indicator_lock_state();
   // TODO(davidben): The only thing that can officially fail here is
-  // `EVP_MD_CTX_copy_ex`, but even that should be impossible in this case.
+  // |EVP_MD_CTX_copy_ex|, but even that should be impossible in this case.
   if (!EVP_DigestFinal_ex(&ctx->md_ctx, buf, &i) ||
       !EVP_MD_CTX_copy_ex(&ctx->md_ctx, &ctx->o_ctx) ||
       !EVP_DigestUpdate(&ctx->md_ctx, buf, i) ||
       !EVP_DigestFinal_ex(&ctx->md_ctx, out, out_len)) {
+    *out_len = 0;
     goto out;
   }
 
@@ -179,8 +178,6 @@ out:
   FIPS_service_indicator_unlock_state();
   if (ret) {
     HMAC_verify_service_indicator(ctx->md);
-  } else if (out_len) {
-    *out_len = 0;
   }
   return ret;
 }
@@ -209,7 +206,7 @@ int HMAC_Init(HMAC_CTX *ctx, const void *key, int key_len, const EVP_MD *md) {
   if (key && md) {
     HMAC_CTX_init(ctx);
   }
-  return HMAC_Init_ex(ctx, key, key_len, md, nullptr);
+  return HMAC_Init_ex(ctx, key, key_len, md, NULL);
 }
 
 int HMAC_CTX_copy(HMAC_CTX *dest, const HMAC_CTX *src) {

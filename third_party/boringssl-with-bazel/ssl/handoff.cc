@@ -17,9 +17,6 @@
 #include <openssl/bytestring.h>
 #include <openssl/err.h>
 
-#include <algorithm>
-#include <optional>
-
 #include "../crypto/internal.h"
 #include "internal.h"
 
@@ -43,7 +40,7 @@ enum early_data_t {
 };
 
 // serialize_features adds a description of features supported by this binary to
-// `out`.  Returns true on success and false on error.
+// |out|.  Returns true on success and false on error.
 static bool serialize_features(CBB *out) {
   CBB ciphers;
   if (!CBB_add_asn1(out, &ciphers, CBS_ASN1_OCTETSTRING)) {
@@ -51,7 +48,7 @@ static bool serialize_features(CBB *out) {
   }
   Span<const SSL_CIPHER> all_ciphers = AllCiphers();
   for (const SSL_CIPHER &cipher : all_ciphers) {
-    if (!CBB_add_u16(&ciphers, cipher.protocol_id)) {
+    if (!CBB_add_u16(&ciphers, static_cast<uint16_t>(cipher.id))) {
       return false;
     }
   }
@@ -117,8 +114,8 @@ bool SSL_decline_handoff(SSL *ssl) {
   return true;
 }
 
-// apply_remote_features reads a list of supported features from `in` and
-// (possibly) reconfigures `ssl` to disallow the negotiation of features whose
+// apply_remote_features reads a list of supported features from |in| and
+// (possibly) reconfigures |ssl| to disallow the negotation of features whose
 // support has not been indicated.  (This prevents the the handshake from
 // committing to features that are not supported on the handoff/handback side.)
 static bool apply_remote_features(SSL *ssl, CBS *in) {
@@ -189,52 +186,29 @@ static bool apply_remote_features(SSL *ssl, CBS *in) {
     supported_groups[idx++] = group;
   }
   Span<const uint16_t> configured_groups =
-      ssl->s3->hs->config->supported_group_list;
-  Span<const uint32_t> configured_groups_flags =
-      ssl->s3->hs->config->supported_group_list_flags;
+      tls1_get_grouplist(ssl->s3->hs.get());
   Array<uint16_t> new_configured_groups;
-  // Temporary scratch space to keep track of consecutive runs of groups of
-  // equal preference, so they can be relabeled after filtering for groups
-  // present in the remote features and copying to the new configuration.
-  Array<size_t> new_groups_preference_ranks;
-  Array<uint32_t> new_groups_flags;
-  if (!new_configured_groups.InitForOverwrite(configured_groups.size()) ||
-      !new_groups_preference_ranks.Init(configured_groups.size()) ||
-      !new_groups_flags.Init(configured_groups.size())) {
+  if (!new_configured_groups.InitForOverwrite(configured_groups.size())) {
     return false;
   }
-  // Populate temporary array containing "preference rank" of each group.
-  for (size_t i = 1; i < configured_groups.size(); ++i) {
-    new_groups_preference_ranks[i] = new_groups_preference_ranks[i - 1];
-    if ((configured_groups_flags[i - 1] &
-         SSL_GROUP_FLAG_EQUAL_PREFERENCE_WITH_NEXT) == 0) {
-      ++new_groups_preference_ranks[i];
-    }
-  }
   idx = 0;
-  std::optional<size_t> last_rank;
-  for (size_t i = 0u; i < configured_groups.size(); ++i) {
-    uint16_t configured_group = configured_groups[i];
-    if (std::find(supported_groups.begin(), supported_groups.end(),
-                  configured_group) == supported_groups.end()) {
-      continue;
+  for (uint16_t configured_group : configured_groups) {
+    bool ok = false;
+    for (uint16_t supported_group : supported_groups) {
+      if (supported_group == configured_group) {
+        ok = true;
+        break;
+      }
     }
-    new_configured_groups[idx] = configured_group;
-    // Set the "equal preference with next" flag on the previous group, if
-    // appropriate.
-    if (last_rank.has_value() && new_groups_preference_ranks[i] == *last_rank) {
-      new_groups_flags[idx - 1] |= SSL_GROUP_FLAG_EQUAL_PREFERENCE_WITH_NEXT;
+    if (ok) {
+      new_configured_groups[idx++] = configured_group;
     }
-    last_rank = new_groups_preference_ranks[i];
-    ++idx;
   }
   if (idx == 0) {
     return false;
   }
   new_configured_groups.Shrink(idx);
-  new_groups_flags.Shrink(idx);
   ssl->config->supported_group_list = std::move(new_configured_groups);
-  ssl->config->supported_group_list_flags = std::move(new_groups_flags);
 
   CBS alps;
   CBS_init(&alps, nullptr, 0);
@@ -265,7 +239,7 @@ static bool apply_remote_features(SSL *ssl, CBS *in) {
   return true;
 }
 
-// uses_disallowed_feature returns true iff `ssl` enables a feature that
+// uses_disallowed_feature returns true iff |ssl| enables a feature that
 // disqualifies it for split handshakes.
 static bool uses_disallowed_feature(const SSL *ssl) {
   return ssl->method->is_dtls || !ssl->config->cert->credentials.empty() ||
@@ -403,8 +377,8 @@ bool SSL_serialize_handback(const SSL *ssl, CBB *out) {
           hostname_len) ||
       !CBB_add_asn1_octet_string(&seq, kUnusedChannelID,
                                  sizeof(kUnusedChannelID)) ||
-      // These two fields were historically `token_binding_negotiated` and
-      // `negotiated_token_binding_param`.
+      // These two fields were historically |token_binding_negotiated| and
+      // |negotiated_token_binding_param|.
       !CBB_add_asn1_bool(&seq, 0) ||  //
       !CBB_add_asn1_uint64(&seq, 0) ||
       !CBB_add_asn1_bool(&seq, s3->hs->next_proto_neg_seen) ||
@@ -546,18 +520,12 @@ bool SSL_apply_handback(SSL *ssl, Span<const uint8_t> handback) {
   SSL_HANDSHAKE *const hs = s3->hs.get();
   if (!session_reused || type == handback_tls13) {
     hs->new_session =
-        SSL_SESSION_parse(&seq, ssl->ctx->x509_method, ssl->ctx->pool.get());
+        SSL_SESSION_parse(&seq, ssl->ctx->x509_method, ssl->ctx->pool);
     session = hs->new_session.get();
   } else {
     ssl->session =
-        SSL_SESSION_parse(&seq, ssl->ctx->x509_method, ssl->ctx->pool.get());
+        SSL_SESSION_parse(&seq, ssl->ctx->x509_method, ssl->ctx->pool);
     session = ssl->session.get();
-  }
-
-  // Split handshakes only support X.509 certificates.
-  if (session != nullptr && session->peer_cert_type != kDefaultCertType) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_UNSUPPORTED_CERTIFICATE);
-    return false;
   }
 
   if (!session || !CBS_get_asn1(&seq, &next_proto, CBS_ASN1_OCTETSTRING) ||
@@ -792,10 +760,9 @@ bool SSL_apply_handback(SSL *ssl, Span<const uint8_t> handback) {
         !CBS_get_asn1(&key_share, &private_key, CBS_ASN1_OCTETSTRING)) {
       return false;
     }
-    UniquePtr<SSLKeyShare> ssl_key_share = SSLKeyShare::Create(group_id);
-    if (ssl_key_share == nullptr ||
-        !ssl_key_share->DeserializePrivateKey(&private_key) ||
-        !hs->key_shares.TryPushBack(std::move(ssl_key_share))) {
+    hs->key_shares[0] = SSLKeyShare::Create(group_id);
+    if (!hs->key_shares[0] ||
+        !hs->key_shares[0]->DeserializePrivateKey(&private_key)) {
       return false;
     }
   }
@@ -861,7 +828,7 @@ int SSL_request_handshake_hints(SSL *ssl, const uint8_t *client_hello,
   return 1;
 }
 
-// `SSL_HANDSHAKE_HINTS` is serialized as the following ASN.1 structure. We use
+// |SSL_HANDSHAKE_HINTS| is serialized as the following ASN.1 structure. We use
 // implicit tagging to make it a little more compact.
 //
 // HandshakeHints ::= SEQUENCE {
@@ -874,24 +841,18 @@ int SSL_request_handshake_hints(SSL *ssl, const uint8_t *client_hello,
 //     -- hint to the wrong field.
 //     decryptedPSKHint        [3] IMPLICIT OCTET STRING OPTIONAL,
 //     ignorePSKHint           [4] IMPLICIT NULL OPTIONAL,
-//     -- Due to a historical typo, compressCertificateHint's tag is primitive
-//     -- instead of constructed.
-//     compressCertificateHint [5 PRIMITIVE] IMPLICIT CompressCertificateHint
-//                                 OPTIONAL,
+//     compressCertificateHint [5] IMPLICIT CompressCertificateHint OPTIONAL,
 //     -- TLS 1.2 and 1.3 use different server random hints because one contains
 //     -- a timestamp while the other doesn't. If the hint was generated
 //     -- assuming TLS 1.3 but we actually negotiate TLS 1.2, mixing the two
 //     -- will break this.
 //     serverRandomTLS12       [6] IMPLICIT OCTET STRING OPTIONAL,
-//     -- Due to a historical typo, ecdheHint tag has universal class instead of
-//     -- context-specific.
-//     ecdheHint               [UNIVERSAL 7] IMPLICIT ECDHEHint OPTIONAL
+//     ecdheHint               [7] IMPLICIT ECDHEHint OPTIONAL
 //     -- At most one of decryptedTicketHint or ignoreTicketHint may be present.
 //     -- renewTicketHint requires decryptedTicketHint.
 //     decryptedTicketHint     [8] IMPLICIT OCTET STRING OPTIONAL,
 //     renewTicketHint         [9] IMPLICIT NULL OPTIONAL,
 //     ignoreTicketHint       [10] IMPLICIT NULL OPTIONAL,
-//     -- Unlike a usual ASN.1 structure, trailing data is ignored.
 // }
 //
 // KeyShareHint ::= SEQUENCE {
@@ -949,9 +910,9 @@ int SSL_serialize_handshake_hints(const SSL *ssl, CBB *out) {
   }
 
   if (!hints->server_random_tls13.empty()) {
-    if (!CBB_add_asn1_element(&seq, kServerRandomTLS13Tag,
-                              hints->server_random_tls13.data(),
-                              hints->server_random_tls13.size())) {
+    if (!CBB_add_asn1(&seq, &child, kServerRandomTLS13Tag) ||
+        !CBB_add_bytes(&child, hints->server_random_tls13.data(),
+                       hints->server_random_tls13.size())) {
       return 0;
     }
   }
@@ -983,9 +944,9 @@ int SSL_serialize_handshake_hints(const SSL *ssl, CBB *out) {
   }
 
   if (!hints->decrypted_psk.empty()) {
-    if (!CBB_add_asn1_element(&seq, kDecryptedPSKTag,
-                              hints->decrypted_psk.data(),
-                              hints->decrypted_psk.size())) {
+    if (!CBB_add_asn1(&seq, &child, kDecryptedPSKTag) ||
+        !CBB_add_bytes(&child, hints->decrypted_psk.data(),
+                       hints->decrypted_psk.size())) {
       return 0;
     }
   }
@@ -1010,9 +971,9 @@ int SSL_serialize_handshake_hints(const SSL *ssl, CBB *out) {
   }
 
   if (!hints->server_random_tls12.empty()) {
-    if (!CBB_add_asn1_element(&seq, kServerRandomTLS12Tag,
-                              hints->server_random_tls12.data(),
-                              hints->server_random_tls12.size())) {
+    if (!CBB_add_asn1(&seq, &child, kServerRandomTLS12Tag) ||
+        !CBB_add_bytes(&child, hints->server_random_tls12.data(),
+                       hints->server_random_tls12.size())) {
       return 0;
     }
   }
@@ -1031,9 +992,9 @@ int SSL_serialize_handshake_hints(const SSL *ssl, CBB *out) {
 
 
   if (!hints->decrypted_ticket.empty()) {
-    if (!CBB_add_asn1_element(&seq, kDecryptedTicketTag,
-                              hints->decrypted_ticket.data(),
-                              hints->decrypted_ticket.size())) {
+    if (!CBB_add_asn1(&seq, &child, kDecryptedTicketTag) ||
+        !CBB_add_bytes(&child, hints->decrypted_ticket.data(),
+                       hints->decrypted_ticket.size())) {
       return 0;
     }
   }

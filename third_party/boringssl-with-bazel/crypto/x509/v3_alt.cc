@@ -15,17 +15,15 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <openssl/asn1.h>
 #include <openssl/conf.h>
 #include <openssl/err.h>
 #include <openssl/mem.h>
 #include <openssl/obj.h>
 #include <openssl/x509.h>
 
+#include "ext_dat.h"
 #include "internal.h"
 
-
-using namespace bssl;
 
 static void *v2i_subject_alt(const X509V3_EXT_METHOD *method,
                              const X509V3_CTX *ctx,
@@ -45,69 +43,29 @@ static STACK_OF(CONF_VALUE) *i2v_GENERAL_NAMES_cb(
   return i2v_GENERAL_NAMES(method, reinterpret_cast<GENERAL_NAMES *>(ext), ret);
 }
 
-const X509V3_EXT_METHOD bssl::v3_subject_alt_name = {
-    NID_subject_alt_name,
-    0,
-    ASN1_ITEM_ref(GENERAL_NAMES),
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    i2v_GENERAL_NAMES_cb,
-    v2i_subject_alt,
-    nullptr,
-    nullptr,
-    nullptr,
-};
+const X509V3_EXT_METHOD v3_alt[] = {
+    {NID_subject_alt_name, 0, ASN1_ITEM_ref(GENERAL_NAMES), 0, 0, 0, 0, 0, 0,
+     i2v_GENERAL_NAMES_cb, v2i_subject_alt, NULL, NULL, NULL},
 
-const X509V3_EXT_METHOD bssl::v3_issuer_alt_name = {
-    NID_issuer_alt_name,
-    0,
-    ASN1_ITEM_ref(GENERAL_NAMES),
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    i2v_GENERAL_NAMES_cb,
-    v2i_issuer_alt,
-    nullptr,
-    nullptr,
-    nullptr,
-};
+    {NID_issuer_alt_name, 0, ASN1_ITEM_ref(GENERAL_NAMES), 0, 0, 0, 0, 0, 0,
+     i2v_GENERAL_NAMES_cb, v2i_issuer_alt, NULL, NULL, NULL},
 
-const X509V3_EXT_METHOD bssl::v3_certificate_issuer = {
-    NID_certificate_issuer,
-    0,
-    ASN1_ITEM_ref(GENERAL_NAMES),
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    i2v_GENERAL_NAMES_cb,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
+    {NID_certificate_issuer, 0, ASN1_ITEM_ref(GENERAL_NAMES), 0, 0, 0, 0, 0, 0,
+     i2v_GENERAL_NAMES_cb, NULL, NULL, NULL, NULL},
 };
 
 STACK_OF(CONF_VALUE) *i2v_GENERAL_NAMES(const X509V3_EXT_METHOD *method,
                                         const GENERAL_NAMES *gens,
                                         STACK_OF(CONF_VALUE) *ret) {
-  int ret_was_null = ret == nullptr;
+  int ret_was_null = ret == NULL;
   for (size_t i = 0; i < sk_GENERAL_NAME_num(gens); i++) {
     const GENERAL_NAME *gen = sk_GENERAL_NAME_value(gens, i);
     STACK_OF(CONF_VALUE) *tmp = i2v_GENERAL_NAME(method, gen, ret);
-    if (tmp == nullptr) {
+    if (tmp == NULL) {
       if (ret_was_null) {
         sk_CONF_VALUE_pop_free(ret, X509V3_conf_free);
       }
-      return nullptr;
+      return NULL;
     }
     ret = tmp;
   }
@@ -121,7 +79,7 @@ STACK_OF(CONF_VALUE) *i2v_GENERAL_NAME(const X509V3_EXT_METHOD *method,
                                        const GENERAL_NAME *gen,
                                        STACK_OF(CONF_VALUE) *ret) {
   // Note the error-handling for this function relies on there being at most
-  // one `X509V3_add_value` call. If there were two and the second failed, we
+  // one |X509V3_add_value| call. If there were two and the second failed, we
   // would need to sometimes free the first call's result.
   unsigned char *p;
   char oline[256], htmp[5];
@@ -129,44 +87,44 @@ STACK_OF(CONF_VALUE) *i2v_GENERAL_NAME(const X509V3_EXT_METHOD *method,
   switch (gen->type) {
     case GEN_OTHERNAME:
       if (!X509V3_add_value("othername", "<unsupported>", &ret)) {
-        return nullptr;
+        return NULL;
       }
       break;
 
     case GEN_X400:
       if (!X509V3_add_value("X400Name", "<unsupported>", &ret)) {
-        return nullptr;
+        return NULL;
       }
       break;
 
     case GEN_EDIPARTY:
       if (!X509V3_add_value("EdiPartyName", "<unsupported>", &ret)) {
-        return nullptr;
+        return NULL;
       }
       break;
 
     case GEN_EMAIL:
       if (!x509V3_add_value_asn1_string("email", gen->d.ia5, &ret)) {
-        return nullptr;
+        return NULL;
       }
       break;
 
     case GEN_DNS:
       if (!x509V3_add_value_asn1_string("DNS", gen->d.ia5, &ret)) {
-        return nullptr;
+        return NULL;
       }
       break;
 
     case GEN_URI:
       if (!x509V3_add_value_asn1_string("URI", gen->d.ia5, &ret)) {
-        return nullptr;
+        return NULL;
       }
       break;
 
     case GEN_DIRNAME:
-      if (X509_NAME_oneline(gen->d.dirn, oline, 256) == nullptr ||
+      if (X509_NAME_oneline(gen->d.dirn, oline, 256) == NULL ||
           !X509V3_add_value("DirName", oline, &ret)) {
-        return nullptr;
+        return NULL;
       }
       break;
 
@@ -187,19 +145,19 @@ STACK_OF(CONF_VALUE) *i2v_GENERAL_NAME(const X509V3_EXT_METHOD *method,
         }
       } else {
         if (!X509V3_add_value("IP Address", "<invalid>", &ret)) {
-          return nullptr;
+          return NULL;
         }
         break;
       }
       if (!X509V3_add_value("IP Address", oline, &ret)) {
-        return nullptr;
+        return NULL;
       }
       break;
 
     case GEN_RID:
       i2t_ASN1_OBJECT(oline, 256, gen->d.rid);
       if (!X509V3_add_value("Registered ID", oline, &ret)) {
-        return nullptr;
+        return NULL;
       }
       break;
   }
@@ -272,8 +230,8 @@ static void *v2i_issuer_alt(const X509V3_EXT_METHOD *method,
                             const X509V3_CTX *ctx,
                             const STACK_OF(CONF_VALUE) *nval) {
   GENERAL_NAMES *gens = sk_GENERAL_NAME_new_null();
-  if (gens == nullptr) {
-    return nullptr;
+  if (gens == NULL) {
+    return NULL;
   }
   for (size_t i = 0; i < sk_CONF_VALUE_num(nval); i++) {
     const CONF_VALUE *cnf = sk_CONF_VALUE_value(nval, i);
@@ -284,7 +242,7 @@ static void *v2i_issuer_alt(const X509V3_EXT_METHOD *method,
       }
     } else {
       GENERAL_NAME *gen = v2i_GENERAL_NAME(method, ctx, cnf);
-      if (gen == nullptr || !sk_GENERAL_NAME_push(gens, gen)) {
+      if (gen == NULL || !sk_GENERAL_NAME_push(gens, gen)) {
         GENERAL_NAME_free(gen);
         goto err;
       }
@@ -293,7 +251,7 @@ static void *v2i_issuer_alt(const X509V3_EXT_METHOD *method,
   return gens;
 err:
   sk_GENERAL_NAME_pop_free(gens, GENERAL_NAME_free);
-  return nullptr;
+  return NULL;
 }
 
 // Append subject altname of issuer to issuer alt name of subject
@@ -312,7 +270,7 @@ static int copy_issuer(const X509V3_CTX *ctx, GENERAL_NAMES *gens) {
   }
 
   int ret = 0;
-  GENERAL_NAMES *ialt = nullptr;
+  GENERAL_NAMES *ialt = NULL;
   X509_EXTENSION *ext;
   if (!(ext = X509_get_ext(ctx->issuer_cert, i)) ||
       !(ialt = reinterpret_cast<GENERAL_NAMES *>(X509V3_EXT_d2i(ext)))) {
@@ -325,8 +283,8 @@ static int copy_issuer(const X509V3_CTX *ctx, GENERAL_NAMES *gens) {
     if (!sk_GENERAL_NAME_push(gens, gen)) {
       goto err;
     }
-    // Ownership of `gen` has moved from `ialt` to `gens`.
-    sk_GENERAL_NAME_set(ialt, j, nullptr);
+    // Ownership of |gen| has moved from |ialt| to |gens|.
+    sk_GENERAL_NAME_set(ialt, j, NULL);
   }
 
   ret = 1;
@@ -340,8 +298,8 @@ static void *v2i_subject_alt(const X509V3_EXT_METHOD *method,
                              const X509V3_CTX *ctx,
                              const STACK_OF(CONF_VALUE) *nval) {
   GENERAL_NAMES *gens = sk_GENERAL_NAME_new_null();
-  if (gens == nullptr) {
-    return nullptr;
+  if (gens == NULL) {
+    return NULL;
   }
   for (size_t i = 0; i < sk_CONF_VALUE_num(nval); i++) {
     const CONF_VALUE *cnf = sk_CONF_VALUE_value(nval, i);
@@ -357,7 +315,7 @@ static void *v2i_subject_alt(const X509V3_EXT_METHOD *method,
       }
     } else {
       GENERAL_NAME *gen = v2i_GENERAL_NAME(method, ctx, cnf);
-      if (gen == nullptr || !sk_GENERAL_NAME_push(gens, gen)) {
+      if (gen == NULL || !sk_GENERAL_NAME_push(gens, gen)) {
         GENERAL_NAME_free(gen);
         goto err;
       }
@@ -366,18 +324,18 @@ static void *v2i_subject_alt(const X509V3_EXT_METHOD *method,
   return gens;
 err:
   sk_GENERAL_NAME_pop_free(gens, GENERAL_NAME_free);
-  return nullptr;
+  return NULL;
 }
 
 // Copy any email addresses in a certificate or request to GENERAL_NAMES
 
 static int copy_email(const X509V3_CTX *ctx, GENERAL_NAMES *gens, int move_p) {
   X509_NAME *nm;
-  ASN1_IA5STRING *email = nullptr;
+  ASN1_IA5STRING *email = NULL;
   X509_NAME_ENTRY *ne;
-  GENERAL_NAME *gen = nullptr;
+  GENERAL_NAME *gen = NULL;
   int i;
-  if (ctx != nullptr && ctx->flags == X509V3_CTX_TEST) {
+  if (ctx != NULL && ctx->flags == X509V3_CTX_TEST) {
     return 1;
   }
   if (!ctx || (!ctx->subject_cert && !ctx->subject_req)) {
@@ -405,12 +363,12 @@ static int copy_email(const X509V3_CTX *ctx, GENERAL_NAMES *gens, int move_p) {
       goto err;
     }
     gen->d.ia5 = email;
-    email = nullptr;
+    email = NULL;
     gen->type = GEN_EMAIL;
     if (!sk_GENERAL_NAME_push(gens, gen)) {
       goto err;
     }
-    gen = nullptr;
+    gen = NULL;
   }
 
   return 1;
@@ -421,17 +379,17 @@ err:
   return 0;
 }
 
-GENERAL_NAMES *bssl::v2i_GENERAL_NAMES(const X509V3_EXT_METHOD *method,
-                                       const X509V3_CTX *ctx,
-                                       const STACK_OF(CONF_VALUE) *nval) {
+GENERAL_NAMES *v2i_GENERAL_NAMES(const X509V3_EXT_METHOD *method,
+                                 const X509V3_CTX *ctx,
+                                 const STACK_OF(CONF_VALUE) *nval) {
   GENERAL_NAMES *gens = sk_GENERAL_NAME_new_null();
-  if (gens == nullptr) {
-    return nullptr;
+  if (gens == NULL) {
+    return NULL;
   }
   for (size_t i = 0; i < sk_CONF_VALUE_num(nval); i++) {
     const CONF_VALUE *cnf = sk_CONF_VALUE_value(nval, i);
     GENERAL_NAME *gen = v2i_GENERAL_NAME(method, ctx, cnf);
-    if (gen == nullptr || !sk_GENERAL_NAME_push(gens, gen)) {
+    if (gen == NULL || !sk_GENERAL_NAME_push(gens, gen)) {
       GENERAL_NAME_free(gen);
       goto err;
     }
@@ -439,13 +397,12 @@ GENERAL_NAMES *bssl::v2i_GENERAL_NAMES(const X509V3_EXT_METHOD *method,
   return gens;
 err:
   sk_GENERAL_NAME_pop_free(gens, GENERAL_NAME_free);
-  return nullptr;
+  return NULL;
 }
 
-GENERAL_NAME *bssl::v2i_GENERAL_NAME(const X509V3_EXT_METHOD *method,
-                                     const X509V3_CTX *ctx,
-                                     const CONF_VALUE *cnf) {
-  return v2i_GENERAL_NAME_ex(nullptr, method, ctx, cnf, 0);
+GENERAL_NAME *v2i_GENERAL_NAME(const X509V3_EXT_METHOD *method,
+                               const X509V3_CTX *ctx, const CONF_VALUE *cnf) {
+  return v2i_GENERAL_NAME_ex(NULL, method, ctx, cnf, 0);
 }
 
 static GENERAL_NAME *a2i_GENERAL_NAME(GENERAL_NAME *out,
@@ -454,16 +411,16 @@ static GENERAL_NAME *a2i_GENERAL_NAME(GENERAL_NAME *out,
                                       const char *value, int is_nc) {
   if (!value) {
     OPENSSL_PUT_ERROR(X509V3, X509V3_R_MISSING_VALUE);
-    return nullptr;
+    return NULL;
   }
 
-  GENERAL_NAME *gen = nullptr;
+  GENERAL_NAME *gen = NULL;
   if (out) {
     gen = out;
   } else {
     gen = GENERAL_NAME_new();
-    if (gen == nullptr) {
-      return nullptr;
+    if (gen == NULL) {
+      return NULL;
     }
   }
 
@@ -472,7 +429,7 @@ static GENERAL_NAME *a2i_GENERAL_NAME(GENERAL_NAME *out,
     case GEN_EMAIL:
     case GEN_DNS: {
       ASN1_IA5STRING *str = ASN1_IA5STRING_new();
-      if (str == nullptr || !ASN1_STRING_set(str, value, strlen(value))) {
+      if (str == NULL || !ASN1_STRING_set(str, value, strlen(value))) {
         ASN1_STRING_free(str);
         goto err;
       }
@@ -500,7 +457,7 @@ static GENERAL_NAME *a2i_GENERAL_NAME(GENERAL_NAME *out,
       } else {
         gen->d.ip = a2i_IPADDRESS(value);
       }
-      if (gen->d.ip == nullptr) {
+      if (gen->d.ip == NULL) {
         OPENSSL_PUT_ERROR(X509V3, X509V3_R_BAD_IP_ADDRESS);
         ERR_add_error_data(2, "value=", value);
         goto err;
@@ -531,18 +488,18 @@ err:
   if (!out) {
     GENERAL_NAME_free(gen);
   }
-  return nullptr;
+  return NULL;
 }
 
-GENERAL_NAME *bssl::v2i_GENERAL_NAME_ex(GENERAL_NAME *out,
-                                        const X509V3_EXT_METHOD *method,
-                                        const X509V3_CTX *ctx,
-                                        const CONF_VALUE *cnf, int is_nc) {
+GENERAL_NAME *v2i_GENERAL_NAME_ex(GENERAL_NAME *out,
+                                  const X509V3_EXT_METHOD *method,
+                                  const X509V3_CTX *ctx, const CONF_VALUE *cnf,
+                                  int is_nc) {
   const char *name = cnf->name;
   const char *value = cnf->value;
   if (!value) {
     OPENSSL_PUT_ERROR(X509V3, X509V3_R_MISSING_VALUE);
-    return nullptr;
+    return NULL;
   }
 
   int type;
@@ -563,7 +520,7 @@ GENERAL_NAME *bssl::v2i_GENERAL_NAME_ex(GENERAL_NAME *out,
   } else {
     OPENSSL_PUT_ERROR(X509V3, X509V3_R_UNSUPPORTED_OPTION);
     ERR_add_error_data(2, "name=", name);
-    return nullptr;
+    return NULL;
   }
 
   return a2i_GENERAL_NAME(out, method, ctx, type, value, is_nc);
@@ -572,29 +529,29 @@ GENERAL_NAME *bssl::v2i_GENERAL_NAME_ex(GENERAL_NAME *out,
 static int do_othername(GENERAL_NAME *gen, const char *value,
                         const X509V3_CTX *ctx) {
   const char *semicolon = strchr(value, ';');
-  if (semicolon == nullptr) {
+  if (semicolon == NULL) {
     return 0;
   }
 
   OTHERNAME *name = OTHERNAME_new();
-  if (name == nullptr) {
+  if (name == NULL) {
     return 0;
   }
 
   char *objtmp = OPENSSL_strndup(value, semicolon - value);
-  if (objtmp == nullptr) {
+  if (objtmp == NULL) {
     goto err;
   }
   ASN1_OBJECT_free(name->type_id);
   name->type_id = OBJ_txt2obj(objtmp, /*dont_search_names=*/0);
   OPENSSL_free(objtmp);
-  if (name->type_id == nullptr) {
+  if (name->type_id == NULL) {
     goto err;
   }
 
   ASN1_TYPE_free(name->value);
   name->value = ASN1_generate_v3(semicolon + 1, ctx);
-  if (name->value == nullptr) {
+  if (name->value == NULL) {
     goto err;
   }
 
@@ -612,10 +569,10 @@ static int do_dirname(GENERAL_NAME *gen, const char *value,
   int ret = 0;
   const STACK_OF(CONF_VALUE) *sk = X509V3_get_section(ctx, value);
   X509_NAME *nm = X509_NAME_new();
-  if (nm == nullptr) {
+  if (nm == NULL) {
     goto err;
   }
-  if (sk == nullptr) {
+  if (sk == NULL) {
     OPENSSL_PUT_ERROR(X509V3, X509V3_R_SECTION_NOT_FOUND);
     ERR_add_error_data(2, "section=", value);
     goto err;

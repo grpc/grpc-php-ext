@@ -544,8 +544,7 @@ static grpc_error_handle init_header_skip_frame_parser(
       t->settings.acked().max_header_list_size(),
       hpack_boundary_type(t, is_eoh), priority_type,
       hpack_parser_log_info(t, HPackParser::LogInfo::kDontKnow),
-      t->mitigation_engine.get(), t->peer_string.as_string_view(),
-      t->auth_context);
+      t->mitigation_engine.get(), t->peer_string.as_string_view());
   return absl::OkStatus();
 }
 
@@ -896,7 +895,7 @@ static grpc_error_handle init_header_frame_parser(grpc_chttp2_transport* t,
                              hpack_boundary_type(t, is_eoh), priority_type,
                              hpack_parser_log_info(t, frame_type),
                              t->mitigation_engine.get(),
-                             t->peer_string.as_string_view(), t->auth_context);
+                             t->peer_string.as_string_view());
   return absl::OkStatus();
 }
 

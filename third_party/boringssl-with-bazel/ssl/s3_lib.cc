@@ -45,8 +45,7 @@ SSL3_STATE::SSL3_STATE()
       alert_dispatch(false),
       renegotiate_pending(false),
       used_hello_retry_request(false),
-      was_key_usage_invalid(false),
-      server_sent_requested_padding(false) {}
+      was_key_usage_invalid(false) {}
 
 SSL3_STATE::~SSL3_STATE() {}
 
@@ -78,12 +77,12 @@ bool tls_new(SSL *ssl) {
 }
 
 void tls_free(SSL *ssl) {
-  if (ssl->s3 == nullptr) {
+  if (ssl->s3 == NULL) {
     return;
   }
 
   Delete(ssl->s3);
-  ssl->s3 = nullptr;
+  ssl->s3 = NULL;
 }
 
 BSSL_NAMESPACE_END

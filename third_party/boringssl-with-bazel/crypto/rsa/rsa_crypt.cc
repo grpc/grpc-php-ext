@@ -29,8 +29,6 @@
 #include "internal.h"
 
 
-using namespace bssl;
-
 static void rand_nonzero(uint8_t *out, size_t len) {
   RAND_bytes(out, len);
 
@@ -47,10 +45,10 @@ int RSA_padding_add_PKCS1_OAEP_mgf1(uint8_t *to, size_t to_len,
                                     const uint8_t *from, size_t from_len,
                                     const uint8_t *param, size_t param_len,
                                     const EVP_MD *md, const EVP_MD *mgf1md) {
-  if (md == nullptr) {
+  if (md == NULL) {
     md = EVP_sha1();
   }
-  if (mgf1md == nullptr) {
+  if (mgf1md == NULL) {
     mgf1md = md;
   }
 
@@ -76,9 +74,9 @@ int RSA_padding_add_PKCS1_OAEP_mgf1(uint8_t *to, size_t to_len,
   uint8_t *seed = to + 1;
   uint8_t *db = to + mdlen + 1;
 
-  uint8_t *dbmask = nullptr;
+  uint8_t *dbmask = NULL;
   int ret = 0;
-  if (!EVP_Digest(param, param_len, db, nullptr, md, nullptr)) {
+  if (!EVP_Digest(param, param_len, db, NULL, md, NULL)) {
     goto out;
   }
   OPENSSL_memset(db + mdlen, 0, emlen - from_len - 2 * mdlen - 1);
@@ -89,7 +87,7 @@ int RSA_padding_add_PKCS1_OAEP_mgf1(uint8_t *to, size_t to_len,
   }
 
   dbmask = reinterpret_cast<uint8_t *>(OPENSSL_malloc(emlen - mdlen));
-  if (dbmask == nullptr) {
+  if (dbmask == NULL) {
     goto out;
   }
 
@@ -114,19 +112,18 @@ out:
   return ret;
 }
 
-int bssl::RSA_padding_check_PKCS1_OAEP_mgf1(uint8_t *out, size_t *out_len,
-                                            size_t max_out, const uint8_t *from,
-                                            size_t from_len,
-                                            const uint8_t *param,
-                                            size_t param_len, const EVP_MD *md,
-                                            const EVP_MD *mgf1md) {
-  uint8_t *db = nullptr;
+int RSA_padding_check_PKCS1_OAEP_mgf1(uint8_t *out, size_t *out_len,
+                                      size_t max_out, const uint8_t *from,
+                                      size_t from_len, const uint8_t *param,
+                                      size_t param_len, const EVP_MD *md,
+                                      const EVP_MD *mgf1md) {
+  uint8_t *db = NULL;
 
   {
-    if (md == nullptr) {
+    if (md == NULL) {
       md = EVP_sha1();
     }
-    if (mgf1md == nullptr) {
+    if (mgf1md == NULL) {
       mgf1md = md;
     }
 
@@ -143,7 +140,7 @@ int bssl::RSA_padding_check_PKCS1_OAEP_mgf1(uint8_t *out, size_t *out_len,
 
     size_t dblen = from_len - mdlen - 1;
     db = reinterpret_cast<uint8_t *>(OPENSSL_malloc(dblen));
-    if (db == nullptr) {
+    if (db == NULL) {
       goto err;
     }
 
@@ -166,7 +163,7 @@ int bssl::RSA_padding_check_PKCS1_OAEP_mgf1(uint8_t *out, size_t *out_len,
     }
 
     uint8_t phash[EVP_MAX_MD_SIZE];
-    if (!EVP_Digest(param, param_len, phash, nullptr, md, nullptr)) {
+    if (!EVP_Digest(param, param_len, phash, NULL, md, NULL)) {
       goto err;
     }
 
@@ -254,7 +251,7 @@ static int rsa_padding_check_PKCS1_type_2(uint8_t *out, size_t *out_len,
   // PKCS#1 v1.5 decryption. See "PKCS #1 v2.2: RSA Cryptography
   // Standard", section 7.2.2.
   if (from_len < RSA_PKCS1_PADDING_SIZE) {
-    // `from` is zero-padded to the size of the RSA modulus, a public value, so
+    // |from| is zero-padded to the size of the RSA modulus, a public value, so
     // this can be rejected in non-constant time.
     OPENSSL_PUT_ERROR(RSA, RSA_R_KEY_SIZE_TOO_SMALL);
     return 0;
@@ -278,16 +275,16 @@ static int rsa_padding_check_PKCS1_type_2(uint8_t *out, size_t *out_len,
   // We must have found the end of PS.
   valid_index &= ~looking_for_index;
 
-  // PS must be at least 8 bytes long, and it starts two bytes into `from`.
+  // PS must be at least 8 bytes long, and it starts two bytes into |from|.
   valid_index &= constant_time_ge_w(zero_index, 2 + 8);
 
   // Skip the zero byte.
   zero_index++;
 
   // NOTE: Although this logic attempts to be constant time, the API contracts
-  // of this function and `RSA_decrypt` with `RSA_PKCS1_PADDING` make it
+  // of this function and |RSA_decrypt| with |RSA_PKCS1_PADDING| make it
   // impossible to completely avoid Bleichenbacher's attack. Consumers should
-  // use `RSA_PADDING_NONE` and perform the padding check in constant-time
+  // use |RSA_PADDING_NONE| and perform the padding check in constant-time
   // combined with a swap to a random session key or other mitigation.
   CONSTTIME_DECLASSIFY(&valid_index, sizeof(valid_index));
   CONSTTIME_DECLASSIFY(&zero_index, sizeof(zero_index));
@@ -300,7 +297,7 @@ static int rsa_padding_check_PKCS1_type_2(uint8_t *out, size_t *out_len,
   const size_t msg_len = from_len - zero_index;
   if (msg_len > max_out) {
     // This shouldn't happen because this function is always called with
-    // `max_out` as the key size and `from_len` is bounded by the key size.
+    // |max_out| as the key size and |from_len| is bounded by the key size.
     OPENSSL_PUT_ERROR(RSA, RSA_R_PKCS_DECODING_ERROR);
     return 0;
   }
@@ -342,9 +339,7 @@ int RSA_private_encrypt(size_t flen, const uint8_t *from, uint8_t *to, RSA *rsa,
 
 int RSA_encrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
                 const uint8_t *in, size_t in_len, int padding) {
-  auto *impl = FromOpaque(rsa);
-
-  if (impl->n == nullptr || impl->e == nullptr) {
+  if (rsa->n == NULL || rsa->e == NULL) {
     OPENSSL_PUT_ERROR(RSA, RSA_R_VALUE_MISSING);
     return 0;
   }
@@ -354,21 +349,25 @@ int RSA_encrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
   }
 
   const unsigned rsa_size = RSA_size(rsa);
+  BIGNUM *f, *result;
+  uint8_t *buf = NULL;
+  BN_CTX *ctx = NULL;
+  int i, ret = 0;
+
   if (max_out < rsa_size) {
     OPENSSL_PUT_ERROR(RSA, RSA_R_OUTPUT_BUFFER_TOO_SMALL);
     return 0;
   }
 
-  UniquePtr<BN_CTX> ctx(BN_CTX_new());
-  if (ctx == nullptr) {
-    return 0;
+  ctx = BN_CTX_new();
+  if (ctx == NULL) {
+    goto err;
   }
 
-  BN_CTXScope scope(ctx.get());
-  BIGNUM *f = BN_CTX_get(ctx.get());
-  BIGNUM *result = BN_CTX_get(ctx.get());
-  uint8_t *buf = reinterpret_cast<uint8_t *>(OPENSSL_malloc(rsa_size));
-  int i, ret = 0;
+  BN_CTX_start(ctx);
+  f = BN_CTX_get(ctx);
+  result = BN_CTX_get(ctx);
+  buf = reinterpret_cast<uint8_t *>(OPENSSL_malloc(rsa_size));
   if (!f || !result || !buf) {
     goto err;
   }
@@ -379,8 +378,8 @@ int RSA_encrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
       break;
     case RSA_PKCS1_OAEP_PADDING:
       // Use the default parameters: SHA-1 for both hashes and no label.
-      i = RSA_padding_add_PKCS1_OAEP_mgf1(buf, rsa_size, in, in_len, nullptr, 0,
-                                          nullptr, nullptr);
+      i = RSA_padding_add_PKCS1_OAEP_mgf1(buf, rsa_size, in, in_len, NULL, 0,
+                                          NULL, NULL);
       break;
     case RSA_NO_PADDING:
       i = RSA_padding_add_none(buf, rsa_size, in, in_len);
@@ -394,20 +393,18 @@ int RSA_encrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
     goto err;
   }
 
-  if (BN_bin2bn(buf, rsa_size, f) == nullptr) {
+  if (BN_bin2bn(buf, rsa_size, f) == NULL) {
     goto err;
   }
 
-  if (BN_ucmp(f, impl->n.get()) >= 0) {
+  if (BN_ucmp(f, rsa->n) >= 0) {
     // usually the padding functions would catch this
     OPENSSL_PUT_ERROR(RSA, RSA_R_DATA_TOO_LARGE_FOR_MODULUS);
     goto err;
   }
 
-  if (!BN_MONT_CTX_set_locked(&impl->mont_n, &impl->lock, impl->n.get(),
-                              ctx.get()) ||
-      !BN_mod_exp_mont(result, f, impl->e.get(), &impl->mont_n->N, ctx.get(),
-                       impl->mont_n.get())) {
+  if (!BN_MONT_CTX_set_locked(&rsa->mont_n, &rsa->lock, rsa->n, ctx) ||
+      !BN_mod_exp_mont(result, f, rsa->e, &rsa->mont_n->N, ctx, rsa->mont_n)) {
     goto err;
   }
 
@@ -422,7 +419,12 @@ int RSA_encrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
   ret = 1;
 
 err:
+  if (ctx != NULL) {
+    BN_CTX_end(ctx);
+    BN_CTX_free(ctx);
+  }
   OPENSSL_free(buf);
+
   return ret;
 }
 
@@ -430,7 +432,7 @@ static int rsa_default_decrypt(RSA *rsa, size_t *out_len, uint8_t *out,
                                size_t max_out, const uint8_t *in, size_t in_len,
                                int padding) {
   const unsigned rsa_size = RSA_size(rsa);
-  uint8_t *buf = nullptr;
+  uint8_t *buf = NULL;
   int ret = 0;
 
   if (max_out < rsa_size) {
@@ -443,7 +445,7 @@ static int rsa_default_decrypt(RSA *rsa, size_t *out_len, uint8_t *out,
   } else {
     // Allocate a temporary buffer to hold the padded plaintext.
     buf = reinterpret_cast<uint8_t *>(OPENSSL_malloc(rsa_size));
-    if (buf == nullptr) {
+    if (buf == NULL) {
       goto err;
     }
   }
@@ -464,8 +466,8 @@ static int rsa_default_decrypt(RSA *rsa, size_t *out_len, uint8_t *out,
       break;
     case RSA_PKCS1_OAEP_PADDING:
       // Use the default parameters: SHA-1 for both hashes and no label.
-      ret = RSA_padding_check_PKCS1_OAEP_mgf1(
-          out, out_len, rsa_size, buf, rsa_size, nullptr, 0, nullptr, nullptr);
+      ret = RSA_padding_check_PKCS1_OAEP_mgf1(out, out_len, rsa_size, buf,
+                                              rsa_size, NULL, 0, NULL, NULL);
       break;
     case RSA_NO_PADDING:
       *out_len = rsa_size;
@@ -493,9 +495,8 @@ err:
 
 int RSA_decrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
                 const uint8_t *in, size_t in_len, int padding) {
-  auto *impl = FromOpaque(rsa);
-  if (impl->meth->decrypt) {
-    return impl->meth->decrypt(rsa, out_len, out, max_out, in, in_len, padding);
+  if (rsa->meth->decrypt) {
+    return rsa->meth->decrypt(rsa, out_len, out, max_out, in, in_len, padding);
   }
 
   return rsa_default_decrypt(rsa, out_len, out, max_out, in, in_len, padding);

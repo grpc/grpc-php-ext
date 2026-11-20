@@ -64,29 +64,29 @@ struct Elem<CompressedTuple<B...>, I>
 template <typename D, size_t I>
 using ElemT = typename Elem<D, I>::type;
 
+// We can't use EBCO on other CompressedTuples because that would mean that we
+// derive from multiple Storage<> instantiations with the same I parameter,
+// and potentially from multiple identical Storage<> instantiations.  So anytime
+// we use type inheritance rather than encapsulation, we mark
+// CompressedTupleImpl, to make this easy to detect.
+struct uses_inheritance {};
 
 template <typename T>
 constexpr bool ShouldUseBase() {
   return std::is_class<T>::value && std::is_empty<T>::value &&
-         !std::is_final<T>::value;
+         !std::is_final<T>::value &&
+         !std::is_base_of<uses_inheritance, T>::value;
 }
-
-// Tag type used to disambiguate Storage types for different CompresseedTuples.
-// Without it, CompressedTuple<T, CompressedTuple<T>> would inherit from
-// Storage<T, 0> twice.
-template <typename... Ts>
-struct StorageTag;
 
 // The storage class provides two specializations:
 //  - For empty classes, it stores T as a base class.
 //  - For everything else, it stores T as a member.
-// Tag should be set to StorageTag<Ts...>.
-template <typename T, size_t I, typename Tag, bool UseBase = ShouldUseBase<T>()>
+template <typename T, size_t I, bool UseBase = ShouldUseBase<T>()>
 struct Storage {
   T value;
   constexpr Storage() = default;
   template <typename V>
-  explicit constexpr Storage(std::in_place_t, V&& v)
+  explicit constexpr Storage(absl::in_place_t, V&& v)
       : value(std::forward<V>(v)) {}
   constexpr const T& get() const& { return value; }
   constexpr T& get() & { return value; }
@@ -94,12 +94,12 @@ struct Storage {
   constexpr T&& get() && { return std::move(*this).value; }
 };
 
-template <typename T, size_t I, typename Tag>
-struct ABSL_INTERNAL_COMPRESSED_TUPLE_DECLSPEC Storage<T, I, Tag, true> : T {
+template <typename T, size_t I>
+struct ABSL_INTERNAL_COMPRESSED_TUPLE_DECLSPEC Storage<T, I, true> : T {
   constexpr Storage() = default;
 
   template <typename V>
-  explicit constexpr Storage(std::in_place_t, V&& v) : T(std::forward<V>(v)) {}
+  explicit constexpr Storage(absl::in_place_t, V&& v) : T(std::forward<V>(v)) {}
 
   constexpr const T& get() const& { return *this; }
   constexpr T& get() & { return *this; }
@@ -111,35 +111,30 @@ template <typename D, typename I, bool ShouldAnyUseBase>
 struct ABSL_INTERNAL_COMPRESSED_TUPLE_DECLSPEC CompressedTupleImpl;
 
 template <typename... Ts, size_t... I, bool ShouldAnyUseBase>
-struct ABSL_INTERNAL_COMPRESSED_TUPLE_DECLSPEC
-    CompressedTupleImpl<CompressedTuple<Ts...>, std::index_sequence<I...>,
-                        ShouldAnyUseBase>
+struct ABSL_INTERNAL_COMPRESSED_TUPLE_DECLSPEC CompressedTupleImpl<
+    CompressedTuple<Ts...>, absl::index_sequence<I...>, ShouldAnyUseBase>
     // We use the dummy identity function through std::integral_constant to
     // convince MSVC of accepting and expanding I in that context. Without it
     // you would get:
     //   error C3548: 'I': parameter pack cannot be used in this context
-    : Storage<Ts, std::integral_constant<size_t, I>::value,
-              StorageTag<Ts...>>... {
+    : uses_inheritance,
+      Storage<Ts, std::integral_constant<size_t, I>::value>... {
   constexpr CompressedTupleImpl() = default;
   template <typename... Vs>
-  explicit constexpr CompressedTupleImpl(std::in_place_t, Vs&&... args)
-      : Storage<Ts, I, StorageTag<Ts...>>(std::in_place,
-                                          std::forward<Vs>(args))... {}
+  explicit constexpr CompressedTupleImpl(absl::in_place_t, Vs&&... args)
+      : Storage<Ts, I>(absl::in_place, std::forward<Vs>(args))... {}
   friend CompressedTuple<Ts...>;
 };
 
 template <typename... Ts, size_t... I>
-struct ABSL_INTERNAL_COMPRESSED_TUPLE_DECLSPEC
-    CompressedTupleImpl<CompressedTuple<Ts...>, std::index_sequence<I...>,
-                        false>
+struct ABSL_INTERNAL_COMPRESSED_TUPLE_DECLSPEC CompressedTupleImpl<
+    CompressedTuple<Ts...>, absl::index_sequence<I...>, false>
     // We use the dummy identity function as above...
-    : Storage<Ts, std::integral_constant<size_t, I>::value, StorageTag<Ts...>,
-              false>... {
+    : Storage<Ts, std::integral_constant<size_t, I>::value, false>... {
   constexpr CompressedTupleImpl() = default;
   template <typename... Vs>
-  explicit constexpr CompressedTupleImpl(std::in_place_t, Vs&&... args)
-      : Storage<Ts, I, StorageTag<Ts...>, false>(std::in_place,
-                                                 std::forward<Vs>(args))... {}
+  explicit constexpr CompressedTupleImpl(absl::in_place_t, Vs&&... args)
+      : Storage<Ts, I, false>(absl::in_place, std::forward<Vs>(args))... {}
   friend CompressedTuple<Ts...>;
 };
 
@@ -166,7 +161,7 @@ struct TupleMoveConstructible : std::false_type {};
 template <class... Ts, class... Vs>
 struct TupleMoveConstructible<true, CompressedTuple<Ts...>, Vs...>
     : std::integral_constant<
-          bool, std::conjunction<
+          bool, absl::conjunction<
                     TupleElementMoveConstructible<Ts, Vs&&>...>::value> {};
 
 template <typename T>
@@ -188,7 +183,9 @@ struct TupleItemsMoveConstructible
 // Helper class to perform the Empty Base Class Optimization.
 // Ts can contain classes and non-classes, empty or not. For the ones that
 // are empty classes, we perform the CompressedTuple. If all types in Ts are
-// empty classes, then CompressedTuple<Ts...> is itself an empty class.
+// empty classes, then CompressedTuple<Ts...> is itself an empty class.  (This
+// does not apply when one or more of those empty classes is itself an empty
+// CompressedTuple.)
 //
 // To access the members, use member .get<N>() function.
 //
@@ -204,15 +201,14 @@ struct TupleItemsMoveConstructible
 template <typename... Ts>
 class ABSL_INTERNAL_COMPRESSED_TUPLE_DECLSPEC CompressedTuple
     : private internal_compressed_tuple::CompressedTupleImpl<
-          CompressedTuple<Ts...>, std::index_sequence_for<Ts...>,
+          CompressedTuple<Ts...>, absl::index_sequence_for<Ts...>,
           internal_compressed_tuple::ShouldAnyUseBase<Ts...>()> {
  private:
   template <int I>
   using ElemT = internal_compressed_tuple::ElemT<CompressedTuple, I>;
 
   template <int I>
-  using StorageT = internal_compressed_tuple::Storage<
-      ElemT<I>, I, internal_compressed_tuple::StorageTag<Ts...>>;
+  using StorageT = internal_compressed_tuple::Storage<ElemT<I>, I>;
 
  public:
   // There seems to be a bug in MSVC dealing in which using '=default' here will
@@ -224,19 +220,19 @@ class ABSL_INTERNAL_COMPRESSED_TUPLE_DECLSPEC CompressedTuple
   constexpr CompressedTuple() = default;
 #endif
   explicit constexpr CompressedTuple(const Ts&... base)
-      : CompressedTuple::CompressedTupleImpl(std::in_place, base...) {}
+      : CompressedTuple::CompressedTupleImpl(absl::in_place, base...) {}
 
   template <typename First, typename... Vs,
-            std::enable_if_t<
-                std::conjunction<
+            absl::enable_if_t<
+                absl::conjunction<
                     // Ensure we are not hiding default copy/move constructors.
-                    std::negation<std::is_same<void(CompressedTuple),
-                                               void(std::decay_t<First>)>>,
+                    absl::negation<std::is_same<void(CompressedTuple),
+                                                void(absl::decay_t<First>)>>,
                     internal_compressed_tuple::TupleItemsMoveConstructible<
                         CompressedTuple<Ts...>, First, Vs...>>::value,
                 bool> = true>
   explicit constexpr CompressedTuple(First&& first, Vs&&... base)
-      : CompressedTuple::CompressedTupleImpl(std::in_place,
+      : CompressedTuple::CompressedTupleImpl(absl::in_place,
                                              std::forward<First>(first),
                                              std::forward<Vs>(base)...) {}
 

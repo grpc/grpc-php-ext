@@ -46,6 +46,8 @@ struct AcceptorDeleter {
   }
 };
 
+class Chttp2ServerListener;
+
 namespace testing {
 class Chttp2ServerListenerTestPeer;
 class ActiveConnectionTestPeer;
@@ -237,9 +239,6 @@ namespace experimental {
 // details.
 class PassiveListenerImpl final : public PassiveListener {
  public:
-  // Called by grpc_server_add_passive_listener().
-  void Init(RefCountedPtr<Server> server, NewChttp2ServerListener* listener);
-
   absl::Status AcceptConnectedEndpoint(
       std::unique_ptr<grpc_event_engine::experimental::EventEngine::Endpoint>
           endpoint) override ABSL_LOCKS_EXCLUDED(mu_);
@@ -250,10 +249,17 @@ class PassiveListenerImpl final : public PassiveListener {
   void ListenerDestroyed() ABSL_LOCKS_EXCLUDED(mu_);
 
  private:
+  // note: the grpc_core::Server redundant namespace qualification is
+  // required for older gcc versions.
+  friend absl::Status(::grpc_server_add_passive_listener)(
+      grpc_core::Server* server, grpc_server_credentials* credentials,
+      std::shared_ptr<grpc_core::experimental::PassiveListenerImpl>
+          passive_listener);
+
   Mutex mu_;
   // Data members will be populated when initialized.
-  RefCountedPtr<Server> server_ ABSL_GUARDED_BY(mu_);
-  NewChttp2ServerListener* listener_ ABSL_GUARDED_BY(mu_) = nullptr;
+  RefCountedPtr<Server> server_;
+  std::variant<Chttp2ServerListener*, NewChttp2ServerListener*> listener_;
 };
 
 }  // namespace experimental

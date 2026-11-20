@@ -87,6 +87,7 @@ struct HashtablezInfo : public profiling_internal::Sample<HashtablezInfo> {
   std::atomic<size_t> total_probe_length;
   std::atomic<size_t> hashes_bitwise_or;
   std::atomic<size_t> hashes_bitwise_and;
+  std::atomic<size_t> hashes_bitwise_xor;
   std::atomic<size_t> max_reserve;
 
   // All of the fields below are set by `PrepareForSampling`, they must not be
@@ -96,7 +97,7 @@ struct HashtablezInfo : public profiling_internal::Sample<HashtablezInfo> {
   // the lock.
   static constexpr int kMaxStackDepth = 64;
   absl::Time create_time;
-  uint32_t depth;
+  int32_t depth;
   // The SOO capacity for this table in elements (not bytes). Note that sampled
   // tables are never SOO because we need to store the infoz handle on the heap.
   // Tables that would be SOO if not sampled should have: soo_capacity > 0 &&
@@ -117,8 +118,8 @@ void RecordClearedReservationSlow(HashtablezInfo* info);
 void RecordStorageChangedSlow(HashtablezInfo* info, size_t size,
                               size_t capacity);
 
-void RecordInsertMissSlow(HashtablezInfo* info, size_t hash,
-                          size_t distance_from_desired);
+void RecordInsertSlow(HashtablezInfo* info, size_t hash,
+                      size_t distance_from_desired);
 
 void RecordEraseSlow(HashtablezInfo* info);
 
@@ -173,9 +174,9 @@ class HashtablezInfoHandle {
     RecordClearedReservationSlow(info_);
   }
 
-  inline void RecordInsertMiss(size_t hash, size_t distance_from_desired) {
+  inline void RecordInsert(size_t hash, size_t distance_from_desired) {
     if (ABSL_PREDICT_TRUE(info_ == nullptr)) return;
-    RecordInsertMissSlow(info_, hash, distance_from_desired);
+    RecordInsertSlow(info_, hash, distance_from_desired);
   }
 
   inline void RecordErase() {
@@ -206,8 +207,7 @@ class HashtablezInfoHandle {
   inline void RecordRehash(size_t /*total_probe_length*/) {}
   inline void RecordReservation(size_t /*target_capacity*/) {}
   inline void RecordClearedReservation() {}
-  inline void RecordInsertMiss(size_t /*hash*/,
-                               size_t /*distance_from_desired*/) {}
+  inline void RecordInsert(size_t /*hash*/, size_t /*distance_from_desired*/) {}
   inline void RecordErase() {}
 
   friend inline void swap(HashtablezInfoHandle& /*lhs*/,

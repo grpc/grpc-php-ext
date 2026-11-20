@@ -114,26 +114,22 @@ struct FlatHashSetPolicy;
 //   absl::flat_hash_set<std::string> ducks =
 //     {"huey", "dewey", "louie"};
 //
-//   // Insert a new element into the flat hash set
-//   ducks.insert("donald");
+//  // Insert a new element into the flat hash set
+//  ducks.insert("donald");
 //
-//   // Force a rehash of the flat hash set
-//   ducks.rehash(0);
+//  // Force a rehash of the flat hash set
+//  ducks.rehash(0);
 //
-//   // See if "dewey" is present
-//   if (ducks.contains("dewey")) {
-//     std::cout << "We found dewey!" << std::endl;
-//   }
-template <
-    class T,
-    class Hash = typename container_internal::FlatHashSetPolicy<T>::DefaultHash,
-    class Eq = typename container_internal::FlatHashSetPolicy<T>::DefaultEq,
-    class Allocator =
-        typename container_internal::FlatHashSetPolicy<T>::DefaultAlloc>
+//  // See if "dewey" is present
+//  if (ducks.contains("dewey")) {
+//    std::cout << "We found dewey!" << std::endl;
+//  }
+template <class T, class Hash = DefaultHashContainerHash<T>,
+          class Eq = DefaultHashContainerEq<T>,
+          class Allocator = std::allocator<T>>
 class ABSL_ATTRIBUTE_OWNER flat_hash_set
-    : public absl::container_internal::InstantiateRawHashSet<
-          absl::container_internal::FlatHashSetPolicy<T>, Hash, Eq,
-          Allocator>::type {
+    : public absl::container_internal::raw_hash_set<
+          absl::container_internal::FlatHashSetPolicy<T>, Hash, Eq, Allocator> {
   using Base = typename flat_hash_set::raw_hash_set;
 
  public:
@@ -158,19 +154,14 @@ class ABSL_ATTRIBUTE_OWNER flat_hash_set
   //
   // * Copy assignment operator
   //
-  //   // Hash functor and Comparator are copied as well
-  //   absl::flat_hash_set<std::string> set4;
-  //   set4 = set3;
+  //  // Hash functor and Comparator are copied as well
+  //  absl::flat_hash_set<std::string> set4;
+  //  set4 = set3;
   //
   // * Move constructor
   //
   //   // Move is guaranteed efficient
   //   absl::flat_hash_set<std::string> set5(std::move(set4));
-  //
-  //   // After the move, set4 is in a valid but unspecified state. The only
-  //   // operations guaranteed to be safe on a moved-from set are destruction,
-  //   // assignment, and clear(). Any other operation (e.g. size(), empty(),
-  //   // iteration) results in undefined behavior.
   //
   // * Move assignment operator
   //
@@ -178,17 +169,10 @@ class ABSL_ATTRIBUTE_OWNER flat_hash_set
   //   absl::flat_hash_set<std::string> set6;
   //   set6 = std::move(set5);
   //
-  //   // Same moved-from guarantees apply to set5 after this operation.
-  //
   // * Range constructor
   //
   //   std::vector<std::string> v = {"a", "b"};
   //   absl::flat_hash_set<std::string> set7(v.begin(), v.end());
-  //
-  // * from_range constructor (C++23)
-  //
-  //   std::vector<std::string> v = {"a", "b"};
-  //   absl::flat_hash_set<std::string> set8(std::from_range, v);
   flat_hash_set() {}
   using Base::Base;
 
@@ -412,9 +396,7 @@ class ABSL_ATTRIBUTE_OWNER flat_hash_set
   //
   // Sets the number of slots in the `flat_hash_set` to the number needed to
   // accommodate at least `count` total elements without exceeding the current
-  // maximum load factor, and may rehash the container if needed. After this
-  // returns, it is guaranteed that `count - size()` elements can be inserted
-  // into the `flat_hash_set` without another rehash.
+  // maximum load factor, and may rehash the container if needed.
   using Base::reserve;
 
   // flat_hash_set::contains()
@@ -524,20 +506,18 @@ namespace container_internal {
 // There is no guarantees on the order of the function calls.
 // Erasure and/or insertion of elements in the function is not allowed.
 template <typename T, typename H, typename E, typename A, typename Function>
-std::decay_t<Function> c_for_each_fast(const flat_hash_set<T, H, E, A>& c,
-                                       Function&& f) {
+decay_t<Function> c_for_each_fast(const flat_hash_set<T, H, E, A>& c,
+                                  Function&& f) {
   container_internal::ForEach(f, &c);
   return f;
 }
 template <typename T, typename H, typename E, typename A, typename Function>
-std::decay_t<Function> c_for_each_fast(flat_hash_set<T, H, E, A>& c,
-                                       Function&& f) {
+decay_t<Function> c_for_each_fast(flat_hash_set<T, H, E, A>& c, Function&& f) {
   container_internal::ForEach(f, &c);
   return f;
 }
 template <typename T, typename H, typename E, typename A, typename Function>
-std::decay_t<Function> c_for_each_fast(flat_hash_set<T, H, E, A>&& c,
-                                       Function&& f) {
+decay_t<Function> c_for_each_fast(flat_hash_set<T, H, E, A>&& c, Function&& f) {
   container_internal::ForEach(f, &c);
   return f;
 }
@@ -553,20 +533,16 @@ struct FlatHashSetPolicy {
   using init_type = T;
   using constant_iterators = std::true_type;
 
-  using DefaultHash = DefaultHashContainerHash<T>;
-  using DefaultEq = DefaultHashContainerEq<T>;
-  using DefaultAlloc = std::allocator<T>;
-
   template <class Allocator, class... Args>
   static void construct(Allocator* alloc, slot_type* slot, Args&&... args) {
-    std::allocator_traits<Allocator>::construct(*alloc, slot,
-                                                std::forward<Args>(args)...);
+    absl::allocator_traits<Allocator>::construct(*alloc, slot,
+                                                 std::forward<Args>(args)...);
   }
 
   // Return std::true_type in case destroy is trivial.
   template <class Allocator>
   static auto destroy(Allocator* alloc, slot_type* slot) {
-    std::allocator_traits<Allocator>::destroy(*alloc, slot);
+    absl::allocator_traits<Allocator>::destroy(*alloc, slot);
     return IsDestructionTrivial<Allocator, slot_type>();
   }
 
@@ -582,9 +558,9 @@ struct FlatHashSetPolicy {
 
   static size_t space_used(const T*) { return 0; }
 
-  template <class Hash, bool kIsDefault>
+  template <class Hash>
   static constexpr HashSlotFn get_hash_slot_fn() {
-    return &TypeErasedApplyToSlotFn<Hash, T, kIsDefault>;
+    return &TypeErasedApplyToSlotFn<Hash, T>;
   }
 };
 }  // namespace container_internal

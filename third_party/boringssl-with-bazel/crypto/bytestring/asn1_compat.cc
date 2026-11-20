@@ -25,25 +25,24 @@
 #include "../internal.h"
 
 
-using namespace bssl;
-
-int bssl::CBB_finish_i2d(CBB *cbb, uint8_t **outp) {
+int CBB_finish_i2d(CBB *cbb, uint8_t **outp) {
   assert(!cbb->is_child);
   assert(cbb->u.base.can_resize);
 
   uint8_t *der;
   size_t der_len;
   if (!CBB_finish(cbb, &der, &der_len)) {
+    CBB_cleanup(cbb);
     return -1;
   }
   if (der_len > INT_MAX) {
     OPENSSL_free(der);
     return -1;
   }
-  if (outp != nullptr) {
-    if (*outp == nullptr) {
+  if (outp != NULL) {
+    if (*outp == NULL) {
       *outp = der;
-      der = nullptr;
+      der = NULL;
     } else {
       OPENSSL_memcpy(*outp, der, der_len);
       *outp += der_len;

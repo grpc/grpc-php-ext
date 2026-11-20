@@ -19,7 +19,23 @@
 #include "internal.h"
 
 
-using namespace bssl;
+#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86)
+// See asm/bn-586.pl.
+#define BN_ADD_ASM
+#define BN_MUL_ASM
+#endif
+
+#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86_64) && \
+    (defined(__GNUC__) || defined(__clang__))
+// See asm/x86_64-gcc.c
+#define BN_ADD_ASM
+#define BN_MUL_ASM
+#endif
+
+#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_AARCH64)
+// See asm/bn-armv8.pl.
+#define BN_ADD_ASM
+#endif
 
 #if !defined(BN_MUL_ASM)
 
@@ -28,24 +44,24 @@ using namespace bssl;
   do {                                    \
     BN_ULLONG t;                          \
     t = (BN_ULLONG)(w) * (a) + (r) + (c); \
-    (r) = (BN_ULONG)(t);                  \
-    (c) = (BN_ULONG)((t) >> BN_BITS2);    \
+    (r) = Lw(t);                          \
+    (c) = Hw(t);                          \
   } while (0)
 
-#define mul(r, a, w, c)                \
-  do {                                 \
-    BN_ULLONG t;                       \
-    t = (BN_ULLONG)(w) * (a) + (c);    \
-    (r) = (BN_ULONG)(t);               \
-    (c) = (BN_ULONG)((t) >> BN_BITS2); \
+#define mul(r, a, w, c)             \
+  do {                              \
+    BN_ULLONG t;                    \
+    t = (BN_ULLONG)(w) * (a) + (c); \
+    (r) = Lw(t);                    \
+    (c) = Hw(t);                    \
   } while (0)
 
-#define sqr(r0, r1, a)                  \
-  do {                                  \
-    BN_ULLONG t;                        \
-    t = (BN_ULLONG)(a) * (a);           \
-    (r0) = (BN_ULONG)(t);               \
-    (r1) = (BN_ULONG)((t) >> BN_BITS2); \
+#define sqr(r0, r1, a)        \
+  do {                        \
+    BN_ULLONG t;              \
+    t = (BN_ULLONG)(a) * (a); \
+    (r0) = Lw(t);             \
+    (r1) = Hw(t);             \
   } while (0)
 
 #else
@@ -81,8 +97,8 @@ using namespace bssl;
 
 #endif  // !BN_ULLONG
 
-BN_ULONG bssl::bn_mul_add_words(BN_ULONG *rp, const BN_ULONG *ap, size_t num,
-                                BN_ULONG w) {
+BN_ULONG bn_mul_add_words(BN_ULONG *rp, const BN_ULONG *ap, size_t num,
+                          BN_ULONG w) {
   BN_ULONG c1 = 0;
 
   if (num == 0) {
@@ -109,8 +125,8 @@ BN_ULONG bssl::bn_mul_add_words(BN_ULONG *rp, const BN_ULONG *ap, size_t num,
   return c1;
 }
 
-BN_ULONG bssl::bn_mul_words(BN_ULONG *rp, const BN_ULONG *ap, size_t num,
-                            BN_ULONG w) {
+BN_ULONG bn_mul_words(BN_ULONG *rp, const BN_ULONG *ap, size_t num,
+                      BN_ULONG w) {
   BN_ULONG c1 = 0;
 
   if (num == 0) {
@@ -135,33 +151,22 @@ BN_ULONG bssl::bn_mul_words(BN_ULONG *rp, const BN_ULONG *ap, size_t num,
   return c1;
 }
 
-void bssl::bn_sqr_add_words(BN_ULONG *r, const BN_ULONG *a, size_t n) {
+void bn_sqr_words(BN_ULONG *r, const BN_ULONG *a, size_t n) {
   if (n == 0) {
     return;
   }
 
-  BN_ULONG carry = 0, lo, hi;
   while (n & ~3) {
-    sqr(lo, hi, a[0]);
-    r[0] = CRYPTO_addc_w(r[0], lo, carry, &carry);
-    r[1] = CRYPTO_addc_w(r[1], hi, carry, &carry);
-    sqr(lo, hi, a[1]);
-    r[2] = CRYPTO_addc_w(r[2], lo, carry, &carry);
-    r[3] = CRYPTO_addc_w(r[3], hi, carry, &carry);
-    sqr(lo, hi, a[2]);
-    r[4] = CRYPTO_addc_w(r[4], lo, carry, &carry);
-    r[5] = CRYPTO_addc_w(r[5], hi, carry, &carry);
-    sqr(lo, hi, a[3]);
-    r[6] = CRYPTO_addc_w(r[6], lo, carry, &carry);
-    r[7] = CRYPTO_addc_w(r[7], hi, carry, &carry);
+    sqr(r[0], r[1], a[0]);
+    sqr(r[2], r[3], a[1]);
+    sqr(r[4], r[5], a[2]);
+    sqr(r[6], r[7], a[3]);
     a += 4;
     r += 8;
     n -= 4;
   }
   while (n) {
-    sqr(lo, hi, a[0]);
-    r[0] = CRYPTO_addc_w(r[0], lo, carry, &carry);
-    r[1] = CRYPTO_addc_w(r[1], hi, carry, &carry);
+    sqr(r[0], r[1], a[0]);
     a++;
     r += 2;
     n--;
@@ -182,8 +187,8 @@ void bssl::bn_sqr_add_words(BN_ULONG *r, const BN_ULONG *a, size_t n) {
     BN_ULONG hi;                        \
     BN_ULLONG t = (BN_ULLONG)(a) * (b); \
     t += (c0); /* no carry */           \
-    (c0) = (BN_ULONG)(t);               \
-    hi = (BN_ULONG)((t) >> BN_BITS2);   \
+    (c0) = (BN_ULONG)Lw(t);             \
+    hi = (BN_ULONG)Hw(t);               \
     (c1) += (hi);                       \
     (c2) += (c1) < hi;                  \
   } while (0)
@@ -193,13 +198,13 @@ void bssl::bn_sqr_add_words(BN_ULONG *r, const BN_ULONG *a, size_t n) {
     BN_ULONG hi;                            \
     BN_ULLONG t = (BN_ULLONG)(a) * (b);     \
     BN_ULLONG tt = t + (c0); /* no carry */ \
-    (c0) = (BN_ULONG)(tt);                  \
-    hi = (BN_ULONG)((tt) >> BN_BITS2);      \
+    (c0) = (BN_ULONG)Lw(tt);                \
+    hi = (BN_ULONG)Hw(tt);                  \
     (c1) += hi;                             \
     (c2) += (c1) < hi;                      \
     t += (c0); /* no carry */               \
-    (c0) = (BN_ULONG)(t);                   \
-    hi = (BN_ULONG)((t) >> BN_BITS2);       \
+    (c0) = (BN_ULONG)Lw(t);                 \
+    hi = (BN_ULONG)Hw(t);                   \
     (c1) += hi;                             \
     (c2) += (c1) < hi;                      \
   } while (0)
@@ -209,8 +214,8 @@ void bssl::bn_sqr_add_words(BN_ULONG *r, const BN_ULONG *a, size_t n) {
     BN_ULONG hi;                              \
     BN_ULLONG t = (BN_ULLONG)(a)[i] * (a)[i]; \
     t += (c0); /* no carry */                 \
-    (c0) = (BN_ULONG)(t);                     \
-    hi = (BN_ULONG)((t) >> BN_BITS2);         \
+    (c0) = (BN_ULONG)Lw(t);                   \
+    hi = (BN_ULONG)Hw(t);                     \
     (c1) += hi;                               \
     (c2) += (c1) < hi;                        \
   } while (0)
@@ -262,8 +267,7 @@ void bssl::bn_sqr_add_words(BN_ULONG *r, const BN_ULONG *a, size_t n) {
 
 #endif  // !BN_ULLONG
 
-void bssl::bn_mul_comba8(BN_ULONG r[16], const BN_ULONG a[8],
-                         const BN_ULONG b[8]) {
+void bn_mul_comba8(BN_ULONG r[16], const BN_ULONG a[8], const BN_ULONG b[8]) {
   BN_ULONG c1, c2, c3;
 
   c1 = 0;
@@ -365,8 +369,7 @@ void bssl::bn_mul_comba8(BN_ULONG r[16], const BN_ULONG a[8],
   r[15] = c1;
 }
 
-void bssl::bn_mul_comba4(BN_ULONG r[8], const BN_ULONG a[4],
-                         const BN_ULONG b[4]) {
+void bn_mul_comba4(BN_ULONG r[8], const BN_ULONG a[4], const BN_ULONG b[4]) {
   BN_ULONG c1, c2, c3;
 
   c1 = 0;
@@ -404,7 +407,7 @@ void bssl::bn_mul_comba4(BN_ULONG r[8], const BN_ULONG a[4],
   r[7] = c2;
 }
 
-void bssl::bn_sqr_comba8(BN_ULONG r[16], const BN_ULONG a[8]) {
+void bn_sqr_comba8(BN_ULONG r[16], const BN_ULONG a[8]) {
   BN_ULONG c1, c2, c3;
 
   c1 = 0;
@@ -478,7 +481,7 @@ void bssl::bn_sqr_comba8(BN_ULONG r[16], const BN_ULONG a[8]) {
   r[15] = c1;
 }
 
-void bssl::bn_sqr_comba4(BN_ULONG r[8], const BN_ULONG a[4]) {
+void bn_sqr_comba4(BN_ULONG r[8], const BN_ULONG a[4]) {
   BN_ULONG c1, c2, c3;
 
   c1 = 0;
@@ -522,8 +525,8 @@ void bssl::bn_sqr_comba4(BN_ULONG r[8], const BN_ULONG a[4]) {
 
 #if !defined(BN_ADD_ASM)
 
-BN_ULONG bssl::bn_add_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
-                            size_t n) {
+BN_ULONG bn_add_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
+                      size_t n) {
   if (n == 0) {
     return 0;
   }
@@ -549,8 +552,8 @@ BN_ULONG bssl::bn_add_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
   return carry;
 }
 
-BN_ULONG bssl::bn_sub_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
-                            size_t n) {
+BN_ULONG bn_sub_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
+                      size_t n) {
   if (n == 0) {
     return (BN_ULONG)0;
   }

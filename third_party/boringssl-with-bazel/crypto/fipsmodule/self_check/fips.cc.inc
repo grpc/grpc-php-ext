@@ -18,9 +18,7 @@
 #include "../delocate.h"
 
 
-using namespace bssl;
-
-int FIPS_mode() {
+int FIPS_mode(void) {
 #if defined(BORINGSSL_FIPS) && !defined(OPENSSL_ASAN)
   return 1;
 #else
@@ -30,9 +28,9 @@ int FIPS_mode() {
 
 int FIPS_mode_set(int on) { return on == FIPS_mode(); }
 
-const char *FIPS_module_name() { return "BoringCrypto"; }
+const char *FIPS_module_name(void) { return "BoringCrypto"; }
 
-int CRYPTO_has_asm() {
+int CRYPTO_has_asm(void) {
 #if defined(OPENSSL_NO_ASM)
   return 0;
 #else
@@ -40,7 +38,9 @@ int CRYPTO_has_asm() {
 #endif
 }
 
-uint32_t FIPS_version() { return 0; }
+uint32_t FIPS_version(void) {
+  return 0;
+}
 
 int FIPS_query_algorithm_status(const char *algorithm) {
 #if defined(BORINGSSL_FIPS)
@@ -67,8 +67,8 @@ int FIPS_query_algorithm_status(const char *algorithm) {
     "SHA2-512",
     "SHA2-512/256",
   };
-  for (const char *approved : kApprovedAlgorithms) {
-    if (strcmp(algorithm, approved) == 0) {
+  for (size_t i = 0; i < OPENSSL_ARRAY_SIZE(kApprovedAlgorithms); i++) {
+    if (strcmp(algorithm, kApprovedAlgorithms[i]) == 0) {
       return 1;
     }
   }
@@ -94,7 +94,7 @@ size_t FIPS_read_counter(enum fips_counter_t counter) {
   return array[index];
 }
 
-void bssl::boringssl_fips_inc_counter(enum fips_counter_t counter) {
+void boringssl_fips_inc_counter(enum fips_counter_t counter) {
   size_t index = (size_t)counter;
   if (index > fips_counter_max) {
     abort();
@@ -111,7 +111,7 @@ void bssl::boringssl_fips_inc_counter(enum fips_counter_t counter) {
 
     if (!CRYPTO_set_thread_local(OPENSSL_THREAD_LOCAL_FIPS_COUNTERS, array,
                                  OPENSSL_free)) {
-      // `OPENSSL_free` has already been called by `CRYPTO_set_thread_local`.
+      // |OPENSSL_free| has already been called by |CRYPTO_set_thread_local|.
       return;
     }
   }
