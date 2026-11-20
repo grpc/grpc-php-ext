@@ -18,7 +18,6 @@
 
 #include <assert.h>
 #include <ctype.h>
-#include <inttypes.h>
 #include <string.h>
 
 #include "../asn1/internal.h"
@@ -277,10 +276,7 @@ int CBS_get_u64_decimal(CBS *cbs, uint64_t *out) {
   return seen_digit;
 }
 
-// parse_base128_integer reads a big-endian base-128 integer from `cbs` and sets
-// `*out` to the result. This is the encoding used in DER for both high tag
-// number form and OID components.
-static int parse_base128_integer(CBS *cbs, uint64_t *out) {
+int CBS_get_asn1_oid_component(CBS *cbs, uint64_t *out) {
   uint64_t v = 0;
   uint8_t b;
   do {
@@ -319,8 +315,9 @@ static int parse_asn1_tag(CBS *cbs, CBS_ASN1_TAG *out) {
   CBS_ASN1_TAG tag = ((CBS_ASN1_TAG)tag_byte & 0xe0) << CBS_ASN1_TAG_SHIFT;
   CBS_ASN1_TAG tag_number = tag_byte & 0x1f;
   if (tag_number == 0x1f) {
+    // High tag numbers are encoded in the same format as OID components.
     uint64_t v;
-    if (!parse_base128_integer(cbs, &v) ||
+    if (!CBS_get_asn1_oid_component(cbs, &v) ||
         // Check the tag number is within our supported bounds.
         v > CBS_ASN1_TAG_NUMBER_MASK ||
         // Small tag numbers should have used low tag number form, even in BER.
@@ -732,12 +729,6 @@ int CBS_is_unsigned_asn1_integer(const CBS *cbs) {
   return CBS_is_valid_asn1_integer(cbs, &is_negative) && !is_negative;
 }
 
-static int add_decimal(CBB *out, uint64_t v) {
-  char buf[DECIMAL_SIZE(uint64_t) + 1];
-  snprintf(buf, sizeof(buf), "%" PRIu64, v);
-  return CBB_add_bytes(out, (const uint8_t *)buf, strlen(buf));
-}
-
 int CBS_is_valid_asn1_oid(const CBS *cbs) {
   if (CBS_len(cbs) == 0) {
     return 0;  // OID encodings cannot be empty.
@@ -747,9 +738,9 @@ int CBS_is_valid_asn1_oid(const CBS *cbs) {
   uint8_t v, prev = 0;
   while (CBS_get_u8(&copy, &v)) {
     // OID encodings are a sequence of minimally-encoded base-128 integers (see
-    // `parse_base128_integer`). If `prev`'s MSB was clear, it was the last byte
-    // of an integer (or `v` is the first byte). `v` is then the first byte of
-    // the next integer. If first byte of an integer is 0x80, it is not
+    // `CBS_get_asn1_oid_component`). If `prev`'s MSB was clear, it was the last
+    // byte of an integer (or `v` is the first byte). `v` is then the first byte
+    // of the next integer. If first byte of an integer is 0x80, it is not
     // minimally-encoded.
     if ((prev & 0x80) == 0 && v == 0x80) {
       return 0;
@@ -770,23 +761,23 @@ char *CBS_asn1_oid_to_text(const CBS *cbs) {
 
   // The first component is 40 * value1 + value2, where value1 is 0, 1, or 2.
   uint64_t v;
-  if (!parse_base128_integer(&copy, &v)) {
+  if (!CBS_get_asn1_oid_component(&copy, &v)) {
     goto err;
   }
 
   if (v >= 80) {
     if (!CBB_add_bytes(&cbb, (const uint8_t *)"2.", 2) ||
-        !add_decimal(&cbb, v - 80)) {
+        !cbb_add_decimal_ascii(&cbb, v - 80)) {
       goto err;
     }
-  } else if (!add_decimal(&cbb, v / 40) || !CBB_add_u8(&cbb, '.') ||
-             !add_decimal(&cbb, v % 40)) {
+  } else if (!cbb_add_decimal_ascii(&cbb, v / 40) || !CBB_add_u8(&cbb, '.') ||
+             !cbb_add_decimal_ascii(&cbb, v % 40)) {
     goto err;
   }
 
   while (CBS_len(&copy) != 0) {
-    if (!parse_base128_integer(&copy, &v) || !CBB_add_u8(&cbb, '.') ||
-        !add_decimal(&cbb, v)) {
+    if (!CBS_get_asn1_oid_component(&copy, &v) || !CBB_add_u8(&cbb, '.') ||
+        !cbb_add_decimal_ascii(&cbb, v)) {
       goto err;
     }
   }
@@ -809,23 +800,13 @@ int CBS_is_valid_asn1_relative_oid(const CBS *cbs) {
 }
 
 char *CBS_asn1_relative_oid_to_text(const CBS *cbs) {
-  CBS copy = *cbs;
   ScopedCBB cbb;
   if (!CBB_init(cbb.get(), 32)) {
     return nullptr;
   }
-
-  // Relative OIDs must have at least one component.
-  uint64_t v;
-  if (!parse_base128_integer(&copy, &v) || !add_decimal(cbb.get(), v)) {
+  if (!CBB_add_asn1_relative_oid_from_der_to_text(cbb.get(), CBS_data(cbs),
+                                                  CBS_len(cbs))) {
     return nullptr;
-  }
-
-  while (CBS_len(&copy) != 0) {
-    if (!parse_base128_integer(&copy, &v) || !CBB_add_u8(cbb.get(), '.') ||
-        !add_decimal(cbb.get(), v)) {
-      return nullptr;
-    }
   }
 
   uint8_t *txt;
@@ -942,7 +923,7 @@ static int CBS_parse_rfc5280_time_internal(const CBS *cbs, int is_gentime,
   // If allow_timezone_offset is non-zero, allow for a four digit timezone
   // offset to be specified even though this is not allowed by RFC 5280. We are
   // permissive of this for UTCTimes due to the unfortunate existence of
-  // artisinally rolled long lived certificates that were baked into places that
+  // artisanally rolled long lived certificates that were baked into places that
   // are now difficult to change. These certificates were generated with the
   // 'openssl' command that permissively allowed the creation of certificates
   // with notBefore and notAfter times specified as strings for direct

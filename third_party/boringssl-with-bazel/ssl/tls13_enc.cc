@@ -77,7 +77,7 @@ bool tls13_init_key_schedule(SSL_HANDSHAKE *hs, Span<const uint8_t> psk) {
 }
 
 bool tls13_init_early_key_schedule(SSL_HANDSHAKE *hs,
-                                   const SSL_SESSION *session) {
+                                   const SSLSession *session) {
   assert(!hs->ssl->server);
   // When offering ECH, early data is associated with ClientHelloInner, not
   // ClientHelloOuter.
@@ -177,9 +177,9 @@ static bool derive_secret(SSL_HANDSHAKE *hs,
   return derive_secret_with_transcript(hs, out, hs->transcript, label);
 }
 
-bool tls13_set_traffic_key(SSL *ssl, enum ssl_encryption_level_t level,
+bool tls13_set_traffic_key(SSLImpl *ssl, enum ssl_encryption_level_t level,
                            enum evp_aead_direction_t direction,
-                           const SSL_SESSION *session,
+                           const SSLSession *session,
                            Span<const uint8_t> traffic_secret) {
   uint16_t version = ssl_session_protocol_version(session);
   const EVP_MD *digest = ssl_session_get_digest(session);
@@ -347,7 +347,7 @@ static const char kTLS13LabelClientApplicationTraffic[] = "c ap traffic";
 static const char kTLS13LabelServerApplicationTraffic[] = "s ap traffic";
 
 bool tls13_derive_early_secret(SSL_HANDSHAKE *hs) {
-  SSL *const ssl = hs->ssl;
+  SSLImpl *const ssl = hs->ssl;
   // When offering ECH on the client, early data is associated with
   // ClientHelloInner, not ClientHelloOuter.
   const SSLTranscript &transcript = (!ssl->server && hs->selected_ech_config)
@@ -363,7 +363,7 @@ bool tls13_derive_early_secret(SSL_HANDSHAKE *hs) {
 }
 
 bool tls13_derive_handshake_secrets(SSL_HANDSHAKE *hs) {
-  SSL *const ssl = hs->ssl;
+  SSLImpl *const ssl = hs->ssl;
   if (!derive_secret(hs, &hs->client_handshake_secret,
                      kTLS13LabelClientHandshakeTraffic) ||
       !ssl_log_secret(ssl, "CLIENT_HANDSHAKE_TRAFFIC_SECRET",
@@ -379,7 +379,7 @@ bool tls13_derive_handshake_secrets(SSL_HANDSHAKE *hs) {
 }
 
 bool tls13_derive_application_secrets(SSL_HANDSHAKE *hs) {
-  SSL *const ssl = hs->ssl;
+  SSLImpl *const ssl = hs->ssl;
   if (!derive_secret(hs, &hs->client_traffic_secret_0,
                      kTLS13LabelClientApplicationTraffic) ||
       !ssl_log_secret(ssl, "CLIENT_TRAFFIC_SECRET_0",
@@ -398,12 +398,13 @@ bool tls13_derive_application_secrets(SSL_HANDSHAKE *hs) {
 
 static const char kTLS13LabelApplicationTraffic[] = "traffic upd";
 
-bool tls13_rotate_traffic_key(SSL *ssl, enum evp_aead_direction_t direction) {
+bool tls13_rotate_traffic_key(SSLImpl *ssl,
+                              enum evp_aead_direction_t direction) {
   InplaceVector<uint8_t, SSL_MAX_MD_SIZE> secret(
       direction == evp_aead_open ? ssl->s3->read_traffic_secret
                                  : ssl->s3->write_traffic_secret);
 
-  const SSL_SESSION *session = SSL_get_session(ssl);
+  const SSLSession *session = ssl_get_session(ssl);
   const EVP_MD *digest = ssl_session_get_digest(session);
   return hkdf_expand_label(Span(secret), digest, secret,
                            kTLS13LabelApplicationTraffic, {},
@@ -457,7 +458,7 @@ bool tls13_finished_mac(SSL_HANDSHAKE *hs, uint8_t *out, size_t *out_len,
 
 static const char kTLS13LabelResumptionPSK[] = "resumption";
 
-bool tls13_derive_session_psk(SSL_SESSION *session, Span<const uint8_t> nonce,
+bool tls13_derive_session_psk(SSLSession *session, Span<const uint8_t> nonce,
                               bool is_dtls) {
   const EVP_MD *digest = ssl_session_get_digest(session);
   // The session initially stores the resumption_master_secret, which we
@@ -469,7 +470,7 @@ bool tls13_derive_session_psk(SSL_SESSION *session, Span<const uint8_t> nonce,
 
 static const char kTLS13LabelExportKeying[] = "exporter";
 
-bool tls13_export_keying_material(const SSL *ssl, Span<uint8_t> out,
+bool tls13_export_keying_material(const SSLImpl *ssl, Span<uint8_t> out,
                                   Span<const uint8_t> secret,
                                   std::string_view label,
                                   Span<const uint8_t> context) {
@@ -479,7 +480,7 @@ bool tls13_export_keying_material(const SSL *ssl, Span<uint8_t> out,
     return false;
   }
 
-  const EVP_MD *digest = ssl_session_get_digest(SSL_get_session(ssl));
+  const EVP_MD *digest = ssl_session_get_digest(ssl_get_session(ssl));
 
   uint8_t hash_buf[EVP_MAX_MD_SIZE];
   uint8_t export_context_buf[EVP_MAX_MD_SIZE];
@@ -507,7 +508,7 @@ const EVP_MD *ssl_pre_shared_key_hash(const SSLPreSharedKey &psk) {
       imported != nullptr) {
     return imported->md;
   }
-  return ssl_session_get_digest(std::get<UniquePtr<SSL_SESSION>>(psk).get());
+  return ssl_session_get_digest(std::get<UniquePtr<SSLSession>>(psk).get());
 }
 
 Span<const uint8_t> ssl_pre_shared_key_identity(const SSLPreSharedKey &psk) {
@@ -515,7 +516,7 @@ Span<const uint8_t> ssl_pre_shared_key_identity(const SSLPreSharedKey &psk) {
       imported != nullptr) {
     return imported->imported_identity;
   }
-  return std::get<UniquePtr<SSL_SESSION>>(psk)->ticket;
+  return std::get<UniquePtr<SSLSession>>(psk)->ticket;
 }
 
 Span<const uint8_t> ssl_pre_shared_key_secret(const SSLPreSharedKey &psk) {
@@ -523,7 +524,7 @@ Span<const uint8_t> ssl_pre_shared_key_secret(const SSLPreSharedKey &psk) {
       imported != nullptr) {
     return imported->ipskx;
   }
-  return std::get<UniquePtr<SSL_SESSION>>(psk)->secret;
+  return std::get<UniquePtr<SSLSession>>(psk)->secret;
 }
 
 bool tls13_psk_binder(const SSL_HANDSHAKE *hs, Span<uint8_t> out,
@@ -539,7 +540,7 @@ bool tls13_psk_binder(const SSL_HANDSHAKE *hs, Span<uint8_t> out,
     secret = imported->ipskx;
     label = "imp binder";
   } else {
-    const SSL_SESSION *session = std::get<UniquePtr<SSL_SESSION>>(psk).get();
+    const SSLSession *session = std::get<UniquePtr<SSLSession>>(psk).get();
     digest = ssl_session_get_digest(session);
     secret = session->secret;
     label = "res binder";
@@ -687,7 +688,7 @@ bool tls13_compare_imported_psk_identity(Span<const uint8_t> id,
          CBS_len(&cbs) == 0;
 }
 
-size_t ssl_ech_confirmation_signal_hello_offset(const SSL *ssl) {
+size_t ssl_ech_confirmation_signal_hello_offset(const SSLImpl *ssl) {
   static_assert(ECH_CONFIRMATION_SIGNAL_LEN < SSL3_RANDOM_SIZE,
                 "the confirmation signal is a suffix of the random");
   const size_t header_len =

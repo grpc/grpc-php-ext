@@ -25,7 +25,7 @@
 
 BSSL_NAMESPACE_BEGIN
 
-static void tls_on_handshake_complete(SSL *ssl) {
+static void tls_on_handshake_complete(SSLImpl *ssl) {
   // The handshake should have released its final message.
   assert(!ssl->s3->has_message);
 
@@ -40,7 +40,7 @@ static void tls_on_handshake_complete(SSL *ssl) {
   }
 }
 
-static bool tls_set_read_state(SSL *ssl, ssl_encryption_level_t level,
+static bool tls_set_read_state(SSLImpl *ssl, ssl_encryption_level_t level,
                                UniquePtr<SSLAEADContext> aead_ctx,
                                Span<const uint8_t> traffic_secret) {
   // Cipher changes are forbidden if the current epoch has leftover data.
@@ -51,7 +51,7 @@ static bool tls_set_read_state(SSL *ssl, ssl_encryption_level_t level,
   }
 
   if (SSL_is_quic(ssl)) {
-    if ((ssl->s3->hs == nullptr || !ssl->s3->hs->hints_requested) &&
+    if ((ssl->s3->hs == nullptr || ssl->s3->hs->pending_hints == nullptr) &&
         !ssl->quic_method->set_read_secret(ssl, level, aead_ctx->cipher(),
                                            traffic_secret.data(),
                                            traffic_secret.size())) {
@@ -72,7 +72,7 @@ static bool tls_set_read_state(SSL *ssl, ssl_encryption_level_t level,
   return true;
 }
 
-static bool tls_set_write_state(SSL *ssl, ssl_encryption_level_t level,
+static bool tls_set_write_state(SSLImpl *ssl, ssl_encryption_level_t level,
                                 UniquePtr<SSLAEADContext> aead_ctx,
                                 Span<const uint8_t> traffic_secret) {
   if (!tls_flush_pending_hs_data(ssl)) {
@@ -80,7 +80,7 @@ static bool tls_set_write_state(SSL *ssl, ssl_encryption_level_t level,
   }
 
   if (SSL_is_quic(ssl)) {
-    if ((ssl->s3->hs == nullptr || !ssl->s3->hs->hints_requested) &&
+    if ((ssl->s3->hs == nullptr || ssl->s3->hs->pending_hints == nullptr) &&
         !ssl->quic_method->set_write_secret(ssl, level, aead_ctx->cipher(),
                                             traffic_secret.data(),
                                             traffic_secret.size())) {
@@ -101,12 +101,12 @@ static bool tls_set_write_state(SSL *ssl, ssl_encryption_level_t level,
   return true;
 }
 
-static void tls_finish_flight(SSL *ssl) {
+static void tls_finish_flight(SSLImpl *ssl) {
   // We don't track whether a flight is complete in TLS and instead always flush
   // every queued message in `tls_flush`, whether the flight is complete or not.
 }
 
-static void tls_schedule_ack(SSL *ssl) {
+static void tls_schedule_ack(SSLImpl *ssl) {
   // TLS does not use ACKs.
 }
 
@@ -144,15 +144,15 @@ static void ssl_noop_x509_free(CERT *cert) {}
 static void ssl_noop_x509_dup(CERT *new_cert, const CERT *cert) {}
 static void ssl_noop_x509_flush_cached_leaf(CERT *cert) {}
 static void ssl_noop_x509_flush_cached_chain(CERT *cert) {}
-static bool ssl_noop_x509_session_cache_objects(SSL_SESSION *sess) {
+static bool ssl_noop_x509_session_cache_objects(SSLSession *sess) {
   return true;
 }
-static bool ssl_noop_x509_session_dup(SSL_SESSION *new_session,
-                                      const SSL_SESSION *session) {
+static bool ssl_noop_x509_session_dup(SSLSession *new_session,
+                                      const SSLSession *session) {
   return true;
 }
-static void ssl_noop_x509_session_clear(SSL_SESSION *session) {}
-static bool ssl_noop_x509_session_verify_cert_chain(SSL_SESSION *session,
+static void ssl_noop_x509_session_clear(SSLSession *session) {}
+static bool ssl_noop_x509_session_verify_cert_chain(SSLSession *session,
                                                     SSL_HANDSHAKE *hs,
                                                     uint8_t *out_alert) {
   return false;

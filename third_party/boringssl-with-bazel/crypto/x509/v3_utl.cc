@@ -303,8 +303,6 @@ int bssl::X509V3_get_value_int(const CONF_VALUE *value, ASN1_INTEGER **aint) {
 #define HDR_NAME 1
 #define HDR_VALUE 2
 
-// #define DEBUG
-
 STACK_OF(CONF_VALUE) *bssl::X509V3_parse_list(const char *line) {
   char *p, *q, c;
   char *ntmp, *vtmp;
@@ -312,6 +310,8 @@ STACK_OF(CONF_VALUE) *bssl::X509V3_parse_list(const char *line) {
   char *linebuf;
   int state;
   // We are going to modify the line so copy it first
+  // TODO(davidben): Rewrite this parser with `std::string_view`. It doesn't
+  // need to copy the string.
   linebuf = OPENSSL_strdup(line);
   if (linebuf == nullptr) {
     goto err;
@@ -335,9 +335,6 @@ STACK_OF(CONF_VALUE) *bssl::X509V3_parse_list(const char *line) {
           *p = 0;
           ntmp = strip_spaces(q);
           q = p + 1;
-#if 0
-                printf("%s\n", ntmp);
-#endif
           if (!ntmp) {
             OPENSSL_PUT_ERROR(X509V3, X509V3_R_INVALID_NULL_NAME);
             goto err;
@@ -351,9 +348,6 @@ STACK_OF(CONF_VALUE) *bssl::X509V3_parse_list(const char *line) {
           state = HDR_NAME;
           *p = 0;
           vtmp = strip_spaces(q);
-#if 0
-                printf("%s\n", ntmp);
-#endif
           if (!vtmp) {
             OPENSSL_PUT_ERROR(X509V3, X509V3_R_INVALID_NULL_VALUE);
             goto err;
@@ -367,9 +361,6 @@ STACK_OF(CONF_VALUE) *bssl::X509V3_parse_list(const char *line) {
 
   if (state == HDR_VALUE) {
     vtmp = strip_spaces(q);
-#if 0
-        printf("%s=%s\n", ntmp, vtmp);
-#endif
     if (!vtmp) {
       OPENSSL_PUT_ERROR(X509V3, X509V3_R_INVALID_NULL_VALUE);
       goto err;
@@ -377,9 +368,6 @@ STACK_OF(CONF_VALUE) *bssl::X509V3_parse_list(const char *line) {
     X509V3_add_value(ntmp, vtmp, &values);
   } else {
     ntmp = strip_spaces(q);
-#if 0
-        printf("%s\n", ntmp);
-#endif
     if (!ntmp) {
       OPENSSL_PUT_ERROR(X509V3, X509V3_R_INVALID_NULL_NAME);
       goto err;
@@ -510,8 +498,12 @@ static int sk_strcmp(const char *const *a, const char *const *b) {
 }
 
 STACK_OF(OPENSSL_STRING) *X509_get1_email(const X509 *x) {
+  int critical;
   UniquePtr<GENERAL_NAMES> gens(reinterpret_cast<GENERAL_NAMES *>(
-      X509_get_ext_d2i(x, NID_subject_alt_name, nullptr, nullptr)));
+      X509_get_ext_d2i(x, NID_subject_alt_name, &critical, nullptr)));
+  if (!gens && critical != -1) {
+    return nullptr;
+  }
   return get_email(X509_get_subject_name(x), gens.get()).release();
 }
 
@@ -538,8 +530,12 @@ STACK_OF(OPENSSL_STRING) *X509_get1_ocsp(const X509 *x) {
 
 STACK_OF(OPENSSL_STRING) *X509_REQ_get1_email(const X509_REQ *x) {
   UniquePtr<STACK_OF(X509_EXTENSION)> exts(X509_REQ_get_extensions(x));
+  int critical;
   UniquePtr<GENERAL_NAMES> gens(reinterpret_cast<GENERAL_NAMES *>(
-      X509V3_get_d2i(exts.get(), NID_subject_alt_name, nullptr, nullptr)));
+      X509V3_get_d2i(exts.get(), NID_subject_alt_name, &critical, nullptr)));
+  if (!gens && critical != -1) {
+    return nullptr;
+  }
   return get_email(X509_REQ_get_subject_name(x), gens.get()).release();
 }
 

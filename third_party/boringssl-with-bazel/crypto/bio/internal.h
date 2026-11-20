@@ -28,8 +28,8 @@
 // newlib uses u_short in socket.h without defining it.
 typedef unsigned short u_short;
 #endif
-#include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #else
 #include <winsock2.h>
 typedef int socklen_t;
@@ -41,7 +41,6 @@ DECLARE_OPAQUE_STRUCT(bio_st, Bio)
 
 struct bio_method_st {
   int type;
-  const char *name;
   int (*bwrite)(BIO *, const char *, int);
   int (*bwrite_ex)(BIO *, const char *, size_t, size_t *);
   int (*bread)(BIO *, char *, int);
@@ -109,7 +108,7 @@ void bio_clear_socket_error();
 
 // bio_socket_finish_connect attempts to complete an in-progress, non-blocking
 // connect operation on `sock`. It returns one if the connect operation
-// suceeded. Otherwise, it returns zero and sets the last socket error to the
+// succeeded. Otherwise, it returns zero and sets the last socket error to the
 // reason it failed.
 int bio_socket_finish_connect(int sock);
 

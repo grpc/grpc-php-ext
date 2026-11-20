@@ -90,7 +90,7 @@ static bool ssl_client_hello_write_without_extensions(
   return true;
 }
 
-static bool is_valid_client_hello_inner(SSL *ssl, uint8_t *out_alert,
+static bool is_valid_client_hello_inner(SSLImpl *ssl, uint8_t *out_alert,
                                         Span<const uint8_t> body) {
   // See RFC 9849, section 7.1.
   SSL_CLIENT_HELLO client_hello;
@@ -135,7 +135,7 @@ static bool is_valid_client_hello_inner(SSL *ssl, uint8_t *out_alert,
 }
 
 bool ssl_decode_client_hello_inner(
-    SSL *ssl, uint8_t *out_alert, Array<uint8_t> *out_client_hello_inner,
+    SSLImpl *ssl, uint8_t *out_alert, Array<uint8_t> *out_client_hello_inner,
     Span<const uint8_t> encoded_client_hello_inner,
     const SSL_CLIENT_HELLO *client_hello_outer) {
   SSL_CLIENT_HELLO client_hello_inner;
@@ -621,8 +621,7 @@ bool ssl_is_valid_ech_config_list(Span<const uint8_t> ech_config_list) {
 
 static bool select_ech_cipher_suite(const EVP_HPKE_KDF **out_kdf,
                                     const EVP_HPKE_AEAD **out_aead,
-                                    Span<const uint8_t> cipher_suites,
-                                    const bool has_aes_hardware) {
+                                    Span<const uint8_t> cipher_suites) {
   const EVP_HPKE_AEAD *aead = nullptr;
   CBS cbs = cipher_suites;
   while (CBS_len(&cbs) != 0) {
@@ -638,7 +637,7 @@ static bool select_ech_cipher_suite(const EVP_HPKE_KDF **out_kdf,
       continue;
     }
     if (aead == nullptr ||
-        (!has_aes_hardware && aead_id == EVP_HPKE_CHACHA20_POLY1305)) {
+        (!EVP_has_aes_hardware() && aead_id == EVP_HPKE_CHACHA20_POLY1305)) {
       aead = candidate;
     }
   }
@@ -656,6 +655,10 @@ bool ssl_select_ech_config(SSL_HANDSHAKE *hs, Span<uint8_t> out_enc,
   *out_enc_len = 0;
   if (hs->max_version < TLS1_3_VERSION) {
     // ECH requires TLS 1.3.
+    if (hs->config->reject_unusable_ech_config) {
+      OPENSSL_PUT_ERROR(SSL, SSL_R_UNUSABLE_ECH_CONFIG_LIST);
+      return false;
+    }
     return true;
   }
 
@@ -680,10 +683,7 @@ bool ssl_select_ech_config(SSL_HANDSHAKE *hs, Span<uint8_t> out_enc,
       const EVP_HPKE_AEAD *aead;
       if (supported &&  //
           ech_config.kem_id == EVP_HPKE_DHKEM_X25519_HKDF_SHA256 &&
-          select_ech_cipher_suite(&kdf, &aead, ech_config.cipher_suites,
-                                  hs->ssl->config->aes_hw_override
-                                      ? hs->ssl->config->aes_hw_override_value
-                                      : EVP_has_aes_hardware())) {
+          select_ech_cipher_suite(&kdf, &aead, ech_config.cipher_suites)) {
         ScopedCBB info;
         static const uint8_t kInfoLabel[] = "tls ech";  // includes trailing NUL
         if (!CBB_init(info.get(), sizeof(kInfoLabel) + ech_config.raw.size()) ||
@@ -706,6 +706,11 @@ bool ssl_select_ech_config(SSL_HANDSHAKE *hs, Span<uint8_t> out_enc,
         return hs->selected_ech_config != nullptr;
       }
     }
+  }
+
+  if (hs->config->reject_unusable_ech_config && !hs->selected_ech_config) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_UNUSABLE_ECH_CONFIG_LIST);
+    return false;
   }
 
   return true;
@@ -736,11 +741,9 @@ static bool setup_ech_grease(SSL_HANDSHAKE *hs) {
   }
 
   const uint16_t kdf_id = EVP_HPKE_HKDF_SHA256;
-  const bool has_aes_hw = hs->ssl->config->aes_hw_override
-                              ? hs->ssl->config->aes_hw_override_value
-                              : EVP_has_aes_hardware();
-  const EVP_HPKE_AEAD *aead =
-      has_aes_hw ? EVP_hpke_aes_128_gcm() : EVP_hpke_chacha20_poly1305();
+  const EVP_HPKE_AEAD *aead = EVP_has_aes_hardware()
+                                  ? EVP_hpke_aes_128_gcm()
+                                  : EVP_hpke_chacha20_poly1305();
   static_assert(ssl_grease_ech_config_id < sizeof(hs->grease_seed),
                 "hs->grease_seed is too small");
   uint8_t config_id = hs->grease_seed[ssl_grease_ech_config_id];
@@ -784,7 +787,7 @@ static bool setup_ech_grease(SSL_HANDSHAKE *hs) {
 }
 
 bool ssl_encrypt_client_hello(SSL_HANDSHAKE *hs, Span<const uint8_t> enc) {
-  SSL *const ssl = hs->ssl;
+  SSLImpl *const ssl = hs->ssl;
   if (!hs->selected_ech_config) {
     return setup_ech_grease(hs);
   }
@@ -894,15 +897,25 @@ BSSL_NAMESPACE_END
 using namespace bssl;
 
 void SSL_set_enable_ech_grease(SSL *ssl, int enable) {
-  if (!ssl->config) {
+  auto *ssl_impl = FromOpaque(ssl);
+  if (!ssl_impl->config) {
     return;
   }
-  ssl->config->ech_grease_enabled = !!enable;
+  ssl_impl->config->ech_grease_enabled = !!enable;
+}
+
+void SSL_set_reject_unusable_ech_config(SSL *ssl, int enable) {
+  auto *ssl_impl = FromOpaque(ssl);
+  if (!ssl_impl->config) {
+    return;
+  }
+  ssl_impl->config->reject_unusable_ech_config = !!enable;
 }
 
 int SSL_set1_ech_config_list(SSL *ssl, const uint8_t *ech_config_list,
                              size_t ech_config_list_len) {
-  if (!ssl->config) {
+  auto *ssl_impl = FromOpaque(ssl);
+  if (!ssl_impl->config) {
     return 0;
   }
 
@@ -911,19 +924,20 @@ int SSL_set1_ech_config_list(SSL *ssl, const uint8_t *ech_config_list,
     OPENSSL_PUT_ERROR(SSL, SSL_R_INVALID_ECH_CONFIG_LIST);
     return 0;
   }
-  return ssl->config->client_ech_config_list.CopyFrom(span);
+  return ssl_impl->config->client_ech_config_list.CopyFrom(span);
 }
 
 void SSL_get0_ech_name_override(const SSL *ssl, const char **out_name,
                                 size_t *out_name_len) {
+  const auto *ssl_impl = FromOpaque(ssl);
   // When ECH is rejected, we use the public name. Note that, if
   // `SSL_CTX_set_reverify_on_resume` is enabled, we reverify the certificate
   // before the 0-RTT point. If also offering ECH, we verify as if
   // ClientHelloInner was accepted and do not override. This works because, at
   // this point, `ech_status` will be `ssl_ech_none`. See the
   // ECH-Client-Reject-EarlyDataReject-OverrideNameOnRetry tests in runner.go.
-  const SSL_HANDSHAKE *hs = ssl->s3->hs.get();
-  if (!ssl->server && hs && ssl->s3->ech_status == ssl_ech_rejected) {
+  const SSL_HANDSHAKE *hs = ssl_impl->s3->hs.get();
+  if (!ssl_impl->server && hs && ssl_impl->s3->ech_status == ssl_ech_rejected) {
     *out_name = reinterpret_cast<const char *>(
         hs->selected_ech_config->public_name.data());
     *out_name_len = hs->selected_ech_config->public_name.size();
@@ -936,7 +950,8 @@ void SSL_get0_ech_name_override(const SSL *ssl, const char **out_name,
 void SSL_get0_ech_retry_configs(const SSL *ssl,
                                 const uint8_t **out_retry_configs,
                                 size_t *out_retry_configs_len) {
-  const SSL_HANDSHAKE *hs = ssl->s3->hs.get();
+  const auto *ssl_impl = FromOpaque(ssl);
+  const SSL_HANDSHAKE *hs = ssl_impl->s3->hs.get();
   if (!hs || !hs->ech_authenticated_reject) {
     // It is an error to call this function except in response to
     // `SSL_R_ECH_REJECTED`. Returning an empty string risks the caller
@@ -1083,12 +1098,13 @@ int SSL_CTX_set1_ech_keys(SSL_CTX *ctx, SSL_ECH_KEYS *keys) {
 }
 
 int SSL_ech_accepted(const SSL *ssl) {
-  if (SSL_in_early_data(ssl) && !ssl->server) {
+  const auto *ssl_impl = FromOpaque(ssl);
+  if (SSL_in_early_data(ssl_impl) && !ssl_impl->server) {
     // In the client early data state, we report properties as if the server
     // accepted early data. The server can only accept early data with
     // ClientHelloInner.
-    return ssl->s3->hs->selected_ech_config != nullptr;
+    return ssl_impl->s3->hs->selected_ech_config != nullptr;
   }
 
-  return ssl->s3->ech_status == ssl_ech_accepted;
+  return ssl_impl->s3->ech_status == ssl_ech_accepted;
 }

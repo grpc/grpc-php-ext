@@ -15,13 +15,18 @@
 #include <openssl/bytestring.h>
 
 #include <assert.h>
+#include <inttypes.h>
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
+
+#include <algorithm>
 
 #include <openssl/err.h>
 #include <openssl/mem.h>
 
 #include "../internal.h"
+#include "../mem_internal.h"
 #include "internal.h"
 
 
@@ -74,6 +79,7 @@ void CBB_cleanup(CBB *cbb) {
 static int cbb_buffer_reserve(struct cbb_buffer_st *base, uint8_t **out,
                               size_t len) {
   if (base == nullptr) {
+    OPENSSL_PUT_ERROR(CRYPTO, ERR_R_PASSED_NULL_PARAMETER);
     return 0;
   }
 
@@ -137,6 +143,7 @@ int CBB_finish(CBB *cbb, uint8_t **out_data, size_t *out_len) {
 
   if (cbb->u.base.can_resize && (out_data == nullptr || out_len == nullptr)) {
     // `out_data` and `out_len` can only be NULL if the CBB is fixed.
+    OPENSSL_PUT_ERROR(CRYPTO, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
 
@@ -190,6 +197,7 @@ int CBB_flush(CBB *cbb) {
   // memory.
   struct cbb_buffer_st *base = cbb_get_base(cbb);
   if (base == nullptr || base->error) {
+    OPENSSL_PUT_ERROR(CRYPTO, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
 
@@ -204,8 +212,11 @@ int CBB_flush(CBB *cbb) {
   size_t child_start = child->offset + child->pending_len_len;
 
   size_t len;
-  if (!CBB_flush(cbb->child) || child_start < child->offset ||
-      base->len < child_start) {
+  if (!CBB_flush(cbb->child)) {
+    goto err;
+  }
+  if (child_start < child->offset || base->len < child_start) {
+    OPENSSL_PUT_ERROR(CRYPTO, ERR_R_INTERNAL_ERROR);
     goto err;
   }
 
@@ -365,6 +376,13 @@ static int add_base128_integer(CBB *cbb, uint64_t v) {
   return 1;
 }
 
+int bssl::cbb_add_decimal_ascii(CBB *out, uint64_t v) {
+  char buf[DECIMAL_SIZE(uint64_t) + 1];
+  snprintf(buf, sizeof(buf), "%" PRIu64, v);
+  return CBB_add_bytes(out, reinterpret_cast<const uint8_t *>(buf),
+                       strlen(buf));
+}
+
 int CBB_add_asn1(CBB *cbb, CBB *out_contents, CBS_ASN1_TAG tag) {
   if (!CBB_flush(cbb)) {
     return 0;
@@ -424,6 +442,7 @@ int CBB_did_write(CBB *cbb, size_t len) {
   struct cbb_buffer_st *base = cbb_get_base(cbb);
   size_t newlen = base->len + len;
   if (cbb->child != nullptr || newlen < base->len || newlen > base->cap) {
+    OPENSSL_PUT_ERROR(CRYPTO, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
   base->len = newlen;
@@ -443,6 +462,7 @@ static int cbb_add_u(CBB *cbb, uint64_t v, size_t len_len) {
 
   // `v` must fit in `len_len` bytes.
   if (v != 0) {
+    OPENSSL_PUT_ERROR(CRYPTO, ERR_R_OVERFLOW);
     cbb_on_error(cbb);
     return 0;
   }
@@ -465,6 +485,8 @@ int CBB_add_u32(CBB *cbb, uint32_t value) { return cbb_add_u(cbb, value, 4); }
 int CBB_add_u32le(CBB *cbb, uint32_t value) {
   return CBB_add_u32(cbb, CRYPTO_bswap4(value));
 }
+
+int CBB_add_u48(CBB *cbb, uint64_t value) { return cbb_add_u(cbb, value, 6); }
 
 int CBB_add_u64(CBB *cbb, uint64_t value) { return cbb_add_u(cbb, value, 8); }
 
@@ -666,6 +688,26 @@ int CBB_add_asn1_relative_oid_from_text(CBB *cbb, const char *text,
   return 1;
 }
 
+int CBB_add_asn1_relative_oid_from_der_to_text(CBB *cbb, const uint8_t *data,
+                                               size_t data_len) {
+  CBS der;
+  CBS_init(&der, data, data_len);
+  // Relative OIDs must have at least one component.
+  uint64_t v;
+  if (!CBS_get_asn1_oid_component(&der, &v) || !cbb_add_decimal_ascii(cbb, v)) {
+    return 0;
+  }
+
+  while (CBS_len(&der) != 0) {
+    if (!CBS_get_asn1_oid_component(&der, &v) || !CBB_add_u8(cbb, '.') ||
+        !cbb_add_decimal_ascii(cbb, v)) {
+      return 0;
+    }
+  }
+
+  return 1;
+}
+
 int CBB_add_asn1_oid_component(CBB *cbb, uint64_t value) {
   if (!CBB_flush(cbb)) {
     return 0;
@@ -674,33 +716,13 @@ int CBB_add_asn1_oid_component(CBB *cbb, uint64_t value) {
   return add_base128_integer(cbb, value);
 }
 
-static int compare_set_of_element(const void *a_ptr, const void *b_ptr) {
-  // See X.690, section 11.6 for the ordering. They are sorted in ascending
-  // order by their DER encoding.
-  const CBS *a = reinterpret_cast<const CBS *>(a_ptr),
-            *b = reinterpret_cast<const CBS *>(b_ptr);
-  size_t a_len = CBS_len(a), b_len = CBS_len(b);
-  size_t min_len = a_len < b_len ? a_len : b_len;
-  int ret = OPENSSL_memcmp(CBS_data(a), CBS_data(b), min_len);
-  if (ret != 0) {
-    return ret;
-  }
-  if (a_len == b_len) {
-    return 0;
-  }
-  // If one is a prefix of the other, the shorter one sorts first. (This is not
-  // actually reachable. No DER encoding is a prefix of another DER encoding.)
-  return a_len < b_len ? -1 : 1;
-}
-
 int CBB_flush_asn1_set_of(CBB *cbb) {
   if (!CBB_flush(cbb)) {
     return 0;
   }
 
-  CBS cbs;
   size_t num_children = 0;
-  CBS_init(&cbs, CBB_data(cbb), CBB_len(cbb));
+  CBS cbs(CBBAsSpan(cbb));
   while (CBS_len(&cbs) != 0) {
     if (!CBS_get_any_asn1_element(&cbs, nullptr, nullptr, nullptr)) {
       OPENSSL_PUT_ERROR(CRYPTO, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
@@ -715,46 +737,49 @@ int CBB_flush_asn1_set_of(CBB *cbb) {
 
   // Parse out the children and sort. We alias them into a copy of so they
   // remain valid as we rewrite `cbb`.
-  int ret = 0;
-  size_t buf_len = CBB_len(cbb);
-  uint8_t *buf =
-      reinterpret_cast<uint8_t *>(OPENSSL_memdup(CBB_data(cbb), buf_len));
-  CBS *children =
-      reinterpret_cast<CBS *>(OPENSSL_calloc(num_children, sizeof(CBS)));
-  uint8_t *out;
-  size_t offset = 0;
-  if (buf == nullptr || children == nullptr) {
-    goto err;
+  Array<uint8_t> copy;
+  Array<CBS> children;
+  if (!copy.CopyFrom(CBBAsSpan(cbb)) ||  //
+      !children.Init(num_children)) {
+    return 0;
   }
-  CBS_init(&cbs, buf, buf_len);
+  cbs = CBS(copy);
   for (size_t i = 0; i < num_children; i++) {
     if (!CBS_get_any_asn1_element(&cbs, &children[i], nullptr, nullptr)) {
-      goto err;
+      OPENSSL_PUT_ERROR(CRYPTO, ERR_R_INTERNAL_ERROR);
+      return 0;
     }
   }
-  qsort(children, num_children, sizeof(CBS), compare_set_of_element);
+  std::sort(children.begin(), children.end(), [](CBS a, CBS b) -> bool {
+    // See X.690, section 11.6 for the ordering. They are sorted in ascending
+    // order by their DER encoding. First compare the common prefix.
+    size_t a_len = CBS_len(&a), b_len = CBS_len(&b);
+    int cmp =
+        OPENSSL_memcmp(CBS_data(&a), CBS_data(&b), std::min(a_len, b_len));
+    if (cmp != 0) {
+      return cmp < 0;
+    }
+    // If one is a prefix of the other, the shorter one sorts first. (They're
+    // actually always equal length. DER encodings are prefix-free.)
+    return a_len < b_len;
+  });
 
   // Write the contents back in the new order.
-  out = (uint8_t *)CBB_data(cbb);
+  uint8_t *out = const_cast<uint8_t *>(CBB_data(cbb));
+  size_t offset = 0;
   for (size_t i = 0; i < num_children; i++) {
     OPENSSL_memcpy(out + offset, CBS_data(&children[i]), CBS_len(&children[i]));
     offset += CBS_len(&children[i]);
   }
-  assert(offset == buf_len);
-
-  ret = 1;
-
-err:
-  OPENSSL_free(buf);
-  OPENSSL_free(children);
-  return ret;
+  assert(offset == copy.size());
+  return 1;
 }
 
 bool bssl::CBBFinishArray(CBB *cbb, Array<uint8_t> *out) {
   uint8_t *ptr;
   size_t len;
   if (!CBB_finish(cbb, &ptr, &len)) {
-    OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+    OPENSSL_PUT_ERROR(CRYPTO, ERR_R_INTERNAL_ERROR);
     return false;
   }
   out->Reset(ptr, len);
